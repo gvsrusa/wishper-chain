@@ -1,8 +1,13 @@
-import React, { createContext, useContext, ReactNode, useEffect, useState } from 'react';
-import { useAuth as useClerkAuth, useUser as useClerkUser, useSignIn, useSignUp } from '@clerk/clerk-expo';
+import React, { createContext, useContext, ReactNode, useEffect, useState, useCallback } from 'react';
+import { useAuth as useClerkAuth, useUser as useClerkUser, useSignIn, useSignUp, useOAuth } from '@clerk/clerk-expo';
+import * as WebBrowser from 'expo-web-browser';
+import * as AuthSession from 'expo-auth-session';
 import { User } from '../types';
 import { ClerkDatabaseSync } from '../services/clerk-database-sync';
 import { AnonymousUserService } from '../services/anonymous-user';
+
+// Warm up the browser for OAuth
+WebBrowser.maybeCompleteAuthSession();
 
 interface AuthContextType {
   user: User | null;
@@ -26,10 +31,21 @@ interface AuthProviderProps {
 export function AuthProvider({ children }: AuthProviderProps) {
   const { isLoaded: authLoaded, userId, signOut: clerkSignOut } = useClerkAuth();
   const { user: clerkUser, isLoaded: userLoaded } = useClerkUser();
-  const { signIn: clerkSignIn, isLoaded: signInLoaded, setActive: setActiveSignIn } = useSignIn();
-  const { signUp: clerkSignUp, isLoaded: signUpLoaded, setActive: setActiveSignUp } = useSignUp();
+  const signInHook = useSignIn();
+  const signUpHook = useSignUp();
+  const { startOAuthFlow: startGoogleOAuthFlow } = useOAuth({ strategy: 'oauth_google' });
+  const { startOAuthFlow: startFacebookOAuthFlow } = useOAuth({ strategy: 'oauth_facebook' });
   const [syncedUser, setSyncedUser] = useState<User | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+
+  // Handle cases where hooks might be null/undefined
+  const clerkSignIn = signInHook?.signIn;
+  const signInLoaded = signInHook?.isLoaded ?? true;
+  const setActiveSignIn = signInHook?.setActive;
+  
+  const clerkSignUp = signUpHook?.signUp;
+  const signUpLoaded = signUpHook?.isLoaded ?? true;
+  const setActiveSignUp = signUpHook?.setActive;
 
   const isLoading = !authLoaded || !userLoaded || !signInLoaded || !signUpLoaded || isSyncing;
 
@@ -95,7 +111,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
 
       // If sign up is complete, set the session
-      if (result.status === 'complete' && result.createdSessionId) {
+      if (result.status === 'complete' && result.createdSessionId && setActiveSignUp) {
         await setActiveSignUp({
           session: result.createdSessionId,
         });
@@ -115,7 +131,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         password,
       });
 
-      if (result.status === 'complete' && result.createdSessionId) {
+      if (result.status === 'complete' && result.createdSessionId && setActiveSignIn) {
         await setActiveSignIn({
           session: result.createdSessionId,
         });
@@ -140,7 +156,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             password: storedCreds.password,
           });
 
-          if (result.status === 'complete' && result.createdSessionId) {
+          if (result.status === 'complete' && result.createdSessionId && setActiveSignIn) {
             await setActiveSignIn({
               session: result.createdSessionId,
             });
@@ -162,7 +178,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       });
 
       // For anonymous users, we'll skip email verification
-      if (result.status === 'complete' && result.createdSessionId) {
+      if (result.status === 'complete' && result.createdSessionId && setActiveSignUp) {
         await setActiveSignUp({
           session: result.createdSessionId,
         });
@@ -173,39 +189,64 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
 
-  const signInWithGoogle = async () => {
-    if (!clerkSignIn) throw new Error('Sign in not available');
-    
+  const signInWithGoogle = useCallback(async () => {
     try {
-      await clerkSignIn.authenticateWithRedirect({
-        strategy: 'oauth_google',
-        redirectUrl: 'whisperchain://oauth-redirect',
-        redirectUrlComplete: 'whisperchain://dashboard',
-      });
+      if (!startGoogleOAuthFlow) {
+        throw new Error('Google OAuth is not available');
+      }
+      
+      const result = await startGoogleOAuthFlow();
+      const { createdSessionId, setActive } = result;
+      
+      // Check if the OAuth flow was completed
+      if (createdSessionId && setActive) {
+        await setActive({ session: createdSessionId });
+      }
     } catch (error: any) {
       console.error('Google sign in error:', error);
-      throw new Error(error.errors?.[0]?.message || 'Failed to sign in with Google');
+      
+      // Handle different error structures
+      const errorMessage = error?.errors?.[0]?.message || 
+                          error?.message || 
+                          error?.error || 
+                          'Failed to sign in with Google. Please ensure Google OAuth is configured in your Clerk dashboard.';
+      throw new Error(errorMessage);
     }
-  };
+  }, [startGoogleOAuthFlow]);
 
   const signInWithFacebook = async () => {
-    if (!clerkSignIn) throw new Error('Sign in not available');
-    
     try {
-      await clerkSignIn.authenticateWithRedirect({
-        strategy: 'oauth_facebook',
-        redirectUrl: 'whisperchain://oauth-redirect',
-        redirectUrlComplete: 'whisperchain://dashboard',
-      });
+      if (!startFacebookOAuthFlow) {
+        throw new Error('Facebook OAuth is not available');
+      }
+      
+      const { createdSessionId, setActive } = await startFacebookOAuthFlow();
+      
+      if (createdSessionId && setActive) {
+        await setActive({ session: createdSessionId });
+      }
     } catch (error: any) {
       console.error('Facebook sign in error:', error);
-      throw new Error(error.errors?.[0]?.message || 'Failed to sign in with Facebook');
+      // Handle different error structures
+      const errorMessage = error?.errors?.[0]?.message || 
+                          error?.message || 
+                          'Failed to sign in with Facebook. Please ensure Facebook OAuth is configured in your Clerk dashboard.';
+      throw new Error(errorMessage);
     }
   };
 
   const signOut = async () => {
     try {
+      // Clear any anonymous user credentials
+      if (user?.isAnonymous) {
+        AnonymousUserService.clearAnonymousUser();
+      }
+      
+      // Sign out from Clerk
       await clerkSignOut();
+      
+      // Clear synced user state
+      setSyncedUser(null);
     } catch (error) {
       console.error('Sign out error:', error);
       throw error;

@@ -55,7 +55,6 @@ export type BottomTabParamList = {
 };
 
 export type RootStackParamList = {
-  Splash: undefined;
   Auth: undefined;
   Main: undefined;
   WhisperChain: { whisperId: string };

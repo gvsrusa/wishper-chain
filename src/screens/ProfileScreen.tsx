@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography } from '../constants';
+import { useAuth } from '../context/AuthContext';
 
 const achievements = [
   { name: 'First Whisper', icon: 'pencil', isEarned: true },
@@ -12,14 +13,40 @@ const achievements = [
 ];
 
 export default function ProfileScreen() {
+  const { signOut, user } = useAuth();
+
+  const handleSignOut = async () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await signOut();
+            } catch (error) {
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
         <View style={styles.avatar}>
           <Ionicons name="person" size={32} color={Colors.textPrimary} />
         </View>
-        <Text style={styles.displayName}>Dreamer79</Text>
-        <Text style={styles.status}>Anonymous Whisperer</Text>
+        <Text style={styles.displayName}>{user?.displayName || 'Anonymous'}</Text>
+        <Text style={styles.status}>{user?.email || 'Anonymous Whisperer'}</Text>
       </View>
       
       <View style={styles.statsSection}>
@@ -83,7 +110,7 @@ export default function ProfileScreen() {
           <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
         
-        <TouchableOpacity style={[styles.menuItem, styles.signOutItem]}>
+        <TouchableOpacity style={[styles.menuItem, styles.signOutItem]} onPress={handleSignOut}>
           <Ionicons name="log-out-outline" size={24} color={Colors.error} />
           <Text style={[styles.menuText, styles.signOutText]}>Sign Out</Text>
         </TouchableOpacity>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Colors, Typography } from '../constants';
@@ -19,6 +19,7 @@ export default function AuthScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showVerification, setShowVerification] = useState(false);
+  const [isProcessingOAuth, setIsProcessingOAuth] = useState(false);
 
   const handleAuth = async () => {
     if (!email.trim() || !password.trim()) {
@@ -29,11 +30,10 @@ export default function AuthScreen({ navigation }: Props) {
     try {
       if (isSignUp) {
         await signUp(email.trim(), password, username.trim() || undefined);
-        // Sign up succeeded without needing verification
-        navigation.replace('Main');
+        // Sign up succeeded - SignedIn component will handle navigation
       } else {
         await signIn(email.trim(), password);
-        navigation.replace('Main');
+        // Sign in succeeded - SignedIn component will handle navigation
       }
     } catch (error) {
       if (error instanceof Error && error.message.includes('verification code')) {
@@ -48,7 +48,7 @@ export default function AuthScreen({ navigation }: Props) {
   const handleAnonymous = async () => {
     try {
       await signInAnonymously();
-      navigation.replace('Main');
+      // Sign in succeeded - SignedIn component will handle navigation
     } catch (error) {
       Alert.alert('Error', 'Failed to sign in anonymously');
     }
@@ -56,17 +56,23 @@ export default function AuthScreen({ navigation }: Props) {
 
   const handleGoogleSignIn = async () => {
     try {
+      setIsProcessingOAuth(true);
       await signInWithGoogle();
-      navigation.replace('Main');
+      // Navigation will be handled by the useEffect that watches isAuthenticated
     } catch (error) {
-      Alert.alert('Google Sign-In Error', error instanceof Error ? error.message : 'Failed to sign in with Google');
+      // Only show error if it's not a cancellation
+      if (error instanceof Error && !error.message.includes('cancelled')) {
+        Alert.alert('Google Sign-In Error', error.message);
+      }
+    } finally {
+      setIsProcessingOAuth(false);
     }
   };
 
   const handleFacebookSignIn = async () => {
     try {
       await signInWithFacebook();
-      navigation.replace('Main');
+      // Navigation will be handled by the useEffect that watches isAuthenticated
     } catch (error) {
       Alert.alert('Facebook Sign-In Error', error instanceof Error ? error.message : 'Failed to sign in with Facebook');
     }
@@ -144,12 +150,12 @@ export default function AuthScreen({ navigation }: Props) {
         {/* Social Login Buttons */}
         <View style={styles.socialButtonsContainer}>
           <TouchableOpacity 
-            style={[styles.socialButton, styles.googleButton, isLoading && styles.disabledButton]} 
+            style={[styles.socialButton, styles.googleButton, (isLoading || isProcessingOAuth) && styles.disabledButton]} 
             onPress={handleGoogleSignIn}
-            disabled={isLoading}
+            disabled={isLoading || isProcessingOAuth}
           >
-            {isLoading ? (
-              <ActivityIndicator color={Colors.textPrimary} size="small" />
+            {isProcessingOAuth ? (
+              <ActivityIndicator color="#333" size="small" />
             ) : (
               <>
                 <Text style={[styles.socialButtonIcon, { color: '#333' }]}>G</Text>

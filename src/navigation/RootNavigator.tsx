@@ -3,22 +3,23 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Colors } from '../constants';
 import { RootStackParamList } from '../types';
+import { SignedIn, SignedOut, useAuth } from '@clerk/clerk-expo';
+import { View, ActivityIndicator } from 'react-native';
 
 // Import navigators and screens
 import BottomTabNavigator from './BottomTabNavigator';
-import SplashScreen from '../screens/SplashScreen';
 import AuthScreen from '../screens/AuthScreen';
 import WhisperChainScreen from '../screens/WhisperChainScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import SearchScreen from '../screens/SearchScreen';
+import { AuthProvider } from '../context/AuthContext';
 
 const Stack = createStackNavigator<RootStackParamList>();
 
-export default function RootNavigator() {
+function MainStack() {
   return (
-    <NavigationContainer>
+    <AuthProvider>
       <Stack.Navigator
-        initialRouteName="Splash"
         screenOptions={{
           headerStyle: {
             backgroundColor: Colors.primaryBackground,
@@ -32,16 +33,6 @@ export default function RootNavigator() {
           },
         }}
       >
-        <Stack.Screen 
-          name="Splash" 
-          component={SplashScreen} 
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen 
-          name="Auth" 
-          component={AuthScreen} 
-          options={{ headerShown: false }}
-        />
         <Stack.Screen 
           name="Main" 
           component={BottomTabNavigator} 
@@ -63,6 +54,43 @@ export default function RootNavigator() {
           options={{ title: 'Search Whispers' }}
         />
       </Stack.Navigator>
+    </AuthProvider>
+  );
+}
+
+export default function RootNavigator() {
+  const { isLoaded } = useAuth();
+  
+  if (!isLoaded) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.primaryBackground }}>
+        <ActivityIndicator size="large" color={Colors.primaryAccent} />
+      </View>
+    );
+  }
+
+  return (
+    <NavigationContainer>
+      <SignedIn>
+        <MainStack />
+      </SignedIn>
+      <SignedOut>
+        <AuthProvider>
+          <Stack.Navigator
+            screenOptions={{
+              headerShown: false,
+              cardStyle: {
+                backgroundColor: Colors.primaryBackground,
+              },
+            }}
+          >
+            <Stack.Screen 
+              name="Auth" 
+              component={AuthScreen} 
+            />
+          </Stack.Navigator>
+        </AuthProvider>
+      </SignedOut>
     </NavigationContainer>
   );
 }
