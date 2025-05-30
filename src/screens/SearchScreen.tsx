@@ -236,7 +236,9 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: Typography.fontSize.base,
     textAlign: 'center',
-    lineHeight: Typography.lineHeight.normal,
+    lineHeight: Typography.fontSize.base * Typography.lineHeight.relaxed,
+    paddingHorizontal: 16,
+    maxWidth: '100%',
   },
   resultsContainer: {
     padding: 16,
