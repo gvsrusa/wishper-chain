@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Typography } from '../constants';
 import { RootStackParamList, Whisper, ChainResponse } from '../types';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { addWordBreaks } from '../utils/textUtils';
 
 type WhisperChainScreenNavigationProp = StackNavigationProp<RootStackParamList, 'WhisperChain'>;
 type WhisperChainScreenRouteProp = RouteProp<RootStackParamList, 'WhisperChain'>;
@@ -19,6 +21,7 @@ interface Props {
 
 export default function WhisperChainScreen({ navigation, route }: Props) {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [whisper, setWhisper] = useState<Whisper | null>(null);
   const [chainResponses, setChainResponses] = useState<ChainResponse[]>([]);
   const [newResponse, setNewResponse] = useState('');
@@ -143,7 +146,9 @@ export default function WhisperChainScreen({ navigation, route }: Props) {
             </View>
           </View>
           
-          <Text style={styles.transformedText}>{whisper.transformedText}</Text>
+          <View style={styles.transformedTextContainer}>
+            <Text style={styles.transformedText}>{addWordBreaks(whisper.transformedText)}</Text>
+          </View>
           <Text style={styles.originalText}>"{whisper.originalText}"</Text>
         </View>
 
@@ -164,7 +169,9 @@ export default function WhisperChainScreen({ navigation, route }: Props) {
                 </View>
               </View>
               
-              <Text style={styles.chainTransformedText}>{response.transformedText}</Text>
+              <View style={styles.chainTransformedTextContainer}>
+                <Text style={styles.chainTransformedText}>{addWordBreaks(response.transformedText)}</Text>
+              </View>
               <Text style={styles.chainOriginalText}>"{response.originalText}"</Text>
             </View>
           ))}
@@ -172,28 +179,33 @@ export default function WhisperChainScreen({ navigation, route }: Props) {
       </ScrollView>
 
       {/* Add Response Input */}
-      <View style={styles.inputSection}>
-        <TextInput
-          style={styles.responseInput}
-          placeholder="Whisper your thoughts..."
-          placeholderTextColor={Colors.textSecondary}
-          value={newResponse}
-          onChangeText={setNewResponse}
-          multiline
-          maxLength={300}
-        />
-        <TouchableOpacity
-          style={[styles.sendButton, (!newResponse.trim() || isSubmitting) && styles.disabledButton]}
-          onPress={handleSubmitResponse}
-          disabled={!newResponse.trim() || isSubmitting}
-        >
-          <Ionicons 
-            name={isSubmitting ? "hourglass" : "send"} 
-            size={20} 
-            color={(!newResponse.trim() || isSubmitting) ? Colors.textSecondary : Colors.textPrimary} 
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
+      >
+        <View style={[styles.inputSection, { paddingBottom: 16 + insets.bottom }]}>
+          <TextInput
+            style={styles.responseInput}
+            placeholder="Whisper your thoughts..."
+            placeholderTextColor={Colors.textSecondary}
+            value={newResponse}
+            onChangeText={setNewResponse}
+            multiline
+            maxLength={300}
           />
-        </TouchableOpacity>
-      </View>
+          <TouchableOpacity
+            style={[styles.sendButton, (!newResponse.trim() || isSubmitting) && styles.disabledButton]}
+            onPress={handleSubmitResponse}
+            disabled={!newResponse.trim() || isSubmitting}
+          >
+            <Ionicons 
+              name={isSubmitting ? "hourglass" : "send"} 
+              size={20} 
+              color={(!newResponse.trim() || isSubmitting) ? Colors.textSecondary : Colors.textPrimary} 
+            />
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -252,11 +264,16 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.xs,
     fontWeight: Typography.fontWeight.medium,
   },
+  transformedTextContainer: {
+    width: '100%',
+    marginBottom: 8,
+  },
   transformedText: {
     color: Colors.textPrimary,
     fontSize: Typography.fontSize.lg,
-    lineHeight: Typography.lineHeight.relaxed,
-    marginBottom: 8,
+    lineHeight: Typography.lineHeight.relaxed * Typography.fontSize.lg,
+    flexWrap: 'wrap',
+    flexShrink: 1,
   },
   originalText: {
     color: Colors.textSecondary,
@@ -279,11 +296,16 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     marginLeft: 20,
   },
+  chainTransformedTextContainer: {
+    width: '100%',
+    marginBottom: 6,
+  },
   chainTransformedText: {
     color: Colors.textPrimary,
     fontSize: Typography.fontSize.base,
-    lineHeight: Typography.lineHeight.normal,
-    marginBottom: 6,
+    lineHeight: Typography.lineHeight.normal * Typography.fontSize.base,
+    flexWrap: 'wrap',
+    flexShrink: 1,
   },
   chainOriginalText: {
     color: Colors.textSecondary,

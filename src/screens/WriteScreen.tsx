@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Typography } from '../constants';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -190,6 +191,8 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.base,
     minHeight: 120,
     marginBottom: 8,
+    textAlignVertical: 'top',
+    lineHeight: Typography.lineHeight.relaxed * Typography.fontSize.base,
   },
   characterCount: {
     color: Colors.textSecondary,

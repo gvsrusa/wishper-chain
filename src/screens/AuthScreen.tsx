@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Typography } from '../constants';
 import { RootStackParamList } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -14,6 +15,7 @@ interface Props {
 
 export default function AuthScreen({ navigation }: Props) {
   const { signUp, signIn, signInAnonymously, signInWithGoogle, signInWithFacebook, isLoading } = useAuth();
+  const insets = useSafeAreaInsets();
   const [isSignUp, setIsSignUp] = useState(true);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
@@ -79,7 +81,14 @@ export default function AuthScreen({ navigation }: Props) {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <KeyboardAvoidingView 
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <ScrollView 
+        contentContainerStyle={[styles.container, { paddingBottom: insets.bottom }]}
+        keyboardShouldPersistTaps="handled"
+      >
       <Text style={styles.logo}>W</Text>
       <Text style={styles.title}>WhisperChain</Text>
       <Text style={styles.tagline}>Your thoughts, transformed into art.</Text>
@@ -201,7 +210,8 @@ export default function AuthScreen({ navigation }: Props) {
           navigation.replace('Main');
         }}
       />
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

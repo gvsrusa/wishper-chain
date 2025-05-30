@@ -11,6 +11,7 @@ import { Whisper } from '../types';
 import GuessTheWhispererModal from '../components/GuessTheWhispererModal';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { addWordBreaks } from '../utils/textUtils';
 
 
 export default function HomeScreen() {
@@ -145,8 +146,14 @@ export default function HomeScreen() {
               <Text style={styles.themeText}>{whisper.theme || 'Abstract'}</Text>
             </View>
             
-            <Text style={styles.transformedText}>{whisper.transformedText}</Text>
-            <Text style={styles.originalText}>"{whisper.originalText}"</Text>
+            <View style={styles.transformedTextContainer}>
+              <Text style={styles.transformedText}>
+                {addWordBreaks(whisper.transformedText)}
+              </Text>
+            </View>
+            <Text style={styles.originalText} numberOfLines={2} ellipsizeMode="tail">
+              "{whisper.originalText}"
+            </Text>
             
             <View style={styles.interactionBar}>
               <TouchableOpacity 
@@ -236,17 +243,24 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.xs,
     fontWeight: Typography.fontWeight.medium,
   },
+  transformedTextContainer: {
+    width: '100%',
+    marginBottom: 12,
+  },
   transformedText: {
     color: Colors.textPrimary,
-    fontSize: Typography.fontSize.lg,
-    lineHeight: Typography.lineHeight.relaxed,
-    marginBottom: 8,
+    fontSize: Typography.fontSize.base,
+    lineHeight: Typography.lineHeight.relaxed * Typography.fontSize.base,
+    flexWrap: 'wrap',
+    flexShrink: 1,
   },
   originalText: {
     color: Colors.textSecondary,
     fontSize: Typography.fontSize.sm,
     fontStyle: 'italic',
     marginBottom: 16,
+    flexWrap: 'wrap',
+    width: '100%',
   },
   interactionBar: {
     flexDirection: 'row',
