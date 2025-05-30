@@ -36,5 +36,26 @@ WhisperChain is a React Native Expo app that transforms personal thoughts into p
 - `/src/constants/colors.ts` - App color palette
 - `/src/services/api.ts` - Mock API layer (currently returns hardcoded data)
 
-### Mock Data
-The app currently uses mock data in `api.ts` with simulated network delays. The `transformText` function provides placeholder AI transformations that should be replaced with actual AI service integration.
+### Database Integration
+The app is configured to use Supabase as the backend database:
+
+- **Configuration**: `src/config/supabase.ts` - requires SUPABASE_URL and SUPABASE_ANON_KEY
+- **Schema**: `database-schema.sql` - complete database schema with tables, policies, and triggers
+- **API Layer**: `src/services/supabase-api.ts` - replaces mock API with real Supabase calls
+- **Mock Fallback**: `src/services/api.ts` - original mock implementation for development
+
+### Setup Steps
+1. Create Supabase project at https://supabase.com
+2. Run `database-schema.sql` in Supabase SQL editor
+3. Copy `.env.example` to `.env` and add your Supabase credentials:
+   - `EXPO_PUBLIC_SUPABASE_URL=your_project_url`
+   - `EXPO_PUBLIC_SUPABASE_ANON_KEY=your_anon_key`
+4. Replace imports from `api.ts` to `supabase-api.ts` in components
+
+### Environment Variables
+- **Configuration**: `src/config/environment.ts` - centralized environment variable management
+- **Validation**: Automatically validates required variables on app start
+- **Security**: `.env` file is gitignored to protect sensitive data
+
+### AI Integration
+The `transformText` function in `supabase-api.ts` currently uses mock transformations and should be replaced with actual AI service (OpenAI, Gemini, etc.).

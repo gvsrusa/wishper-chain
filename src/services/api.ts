@@ -1,149 +1,404 @@
-import { Whisper, ChainResponse, User, Theme } from '../types';
+// Main API service that works with Clerk authentication
+// TEMPORARY: Using mock API to avoid WebSocket issues
+export { api } from './api-mock';
 
-// Mock data
-const mockUser: User = {
-  id: 'user1',
-  username: 'Dreamer79',
-  isAnonymous: true,
-  displayName: 'Dreamer79',
-  createdAt: new Date(),
-};
+// Transform database response to app types
+const transformWhisper = (dbWhisper: any): Whisper => ({
+  id: dbWhisper.id,
+  userId: dbWhisper.user_id,
+  originalText: dbWhisper.original_text,
+  transformedText: dbWhisper.transformed_text,
+  theme: dbWhisper.themes?.name || dbWhisper.theme,
+  likes: dbWhisper.likes_count || 0,
+  chainCount: dbWhisper.chain_count || 0,
+  createdAt: new Date(dbWhisper.created_at),
+  isLiked: false, // Will be set based on user's likes
+});
 
-const mockWhispers: Whisper[] = [
-  {
-    id: '1',
-    userId: 'user1',
-    originalText: 'I feel so alone in this crowded room',
-    transformedText: 'In seas of faces, an island stands alone, yearning for connection across the silent waves.',
-    theme: 'Loneliness',
-    likes: 24,
-    chainCount: 8,
-    createdAt: new Date(),
-    isLiked: false,
-  },
-  {
-    id: '2',
-    userId: 'user2',
-    originalText: 'Dreaming of flying away from all my problems',
-    transformedText: 'Wings of hope unfurl beneath starlit skies, carrying dreams beyond the weight of earthly burdens.',
-    theme: 'Dreams',
-    likes: 15,
-    chainCount: 12,
-    createdAt: new Date(),
-    isLiked: true,
-  },
-  {
-    id: '3',
-    userId: 'user3',
-    originalText: 'The sunset reminds me of better days',
-    transformedText: 'Golden memories paint the evening sky, whispering promises of dawn yet to come.',
-    theme: 'Hope',
-    likes: 32,
-    chainCount: 5,
-    createdAt: new Date(),
-    isLiked: false,
-  },
-];
+const transformChainResponse = (dbResponse: any): ChainResponse => ({
+  id: dbResponse.id,
+  whisperId: dbResponse.whisper_id,
+  userId: dbResponse.user_id,
+  originalText: dbResponse.original_text,
+  transformedText: dbResponse.transformed_text,
+  createdAt: new Date(dbResponse.created_at),
+});
 
-// Mock API functions
 export const api = {
-  // Authentication
-  signUp: async (email: string, password: string, username?: string): Promise<User> => {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    return mockUser;
+  // Whisper operations
+  getWhispers: async (sortBy: string = 'trending', userId?: string): Promise<Whisper[]> => {
+    try {
+      let query = supabase
+        .from('whispers')
+        .select(`
+          *,
+          themes (name, accent_color, background_color),
+          users (username, display_name, avatar_url)
+        `);
+
+      // Apply sorting
+      switch (sortBy) {
+        case 'trending':
+          query = query.order('likes_count', { ascending: false })
+                      .order('chain_count', { ascending: false });
+          break;
+        case 'recent':
+          query = query.order('created_at', { ascending: false });
+          break;
+        case 'following':
+          if (userId) {
+            // Get whispers from followed users
+            const { data: following } = await supabase
+              .from('follows')
+              .select('following_id')
+              .eq('follower_id', userId);
+            
+            const followingIds = following?.map(f => f.following_id) || [];
+            query = query.in('user_id', followingIds);
+          }
+          query = query.order('created_at', { ascending: false });
+          break;
+      }
+
+      const { data, error } = await query.limit(50);
+      
+      if (error) throw error;
+
+      // Get user's likes if authenticated
+      let userLikes: string[] = [];
+      if (userId) {
+        const { data: likes } = await supabase
+          .from('likes')
+          .select('whisper_id')
+          .eq('user_id', userId);
+        userLikes = likes?.map(l => l.whisper_id) || [];
+      }
+
+      return (data || []).map(whisper => ({
+        ...transformWhisper(whisper),
+        isLiked: userLikes.includes(whisper.id),
+      }));
+    } catch (error) {
+      console.error('Error fetching whispers:', error);
+      return [];
+    }
   },
 
-  signIn: async (email: string, password: string): Promise<User> => {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    return mockUser;
+  getWhisperById: async (id: string, userId?: string): Promise<Whisper | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('whispers')
+        .select(`
+          *,
+          themes (name, accent_color, background_color),
+          users (username, display_name, avatar_url)
+        `)
+        .eq('id', id)
+        .single();
+
+      if (error || !data) return null;
+
+      // Check if user liked this whisper
+      let isLiked = false;
+      if (userId) {
+        const { data: like } = await supabase
+          .from('likes')
+          .select('id')
+          .eq('whisper_id', id)
+          .eq('user_id', userId)
+          .single();
+        isLiked = !!like;
+      }
+
+      return {
+        ...transformWhisper(data),
+        isLiked,
+      };
+    } catch (error) {
+      console.error('Error fetching whisper:', error);
+      return null;
+    }
   },
 
-  signInAnonymously: async (): Promise<User> => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return mockUser;
+  createWhisper: async (text: string, theme: string, userId: string): Promise<Whisper> => {
+    try {
+      // Get theme data
+      const { data: themeData } = await supabase
+        .from('themes')
+        .select('id')
+        .eq('name', theme)
+        .single();
+
+      const { data, error } = await supabase
+        .from('whispers')
+        .insert({
+          user_id: userId,
+          original_text: text,
+          transformed_text: text, // In real app, this would be AI-transformed
+          theme_id: themeData?.id,
+          is_anonymous: false,
+        })
+        .select(`
+          *,
+          themes (name, accent_color, background_color),
+          users (username, display_name, avatar_url)
+        `)
+        .single();
+
+      if (error) throw error;
+
+      return transformWhisper(data);
+    } catch (error) {
+      console.error('Error creating whisper:', error);
+      throw error;
+    }
   },
 
-  // Whispers
-  getWhispers: async (sortBy: string = 'trending'): Promise<Whisper[]> => {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    return mockWhispers;
-  },
-
-  getWhisperById: async (id: string): Promise<Whisper | null> => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return mockWhispers.find(w => w.id === id) || null;
-  },
-
-  createWhisper: async (originalText: string, theme?: string): Promise<Whisper> => {
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate AI processing
-    
-    const newWhisper: Whisper = {
-      id: Date.now().toString(),
-      userId: mockUser.id,
-      originalText,
-      transformedText: await transformText(originalText),
-      theme,
-      likes: 0,
-      chainCount: 0,
-      createdAt: new Date(),
-      isLiked: false,
-    };
-    
-    return newWhisper;
-  },
-
-  likeWhisper: async (whisperId: string): Promise<void> => {
-    await new Promise(resolve => setTimeout(resolve, 300));
-  },
-
-  // Chain responses
+  // Chain response operations
   getChainResponses: async (whisperId: string): Promise<ChainResponse[]> => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return [
-      {
-        id: '1',
-        whisperId,
-        userId: 'user2',
-        originalText: 'But sometimes islands become lighthouses',
-        transformedText: 'Yet from solitude springs the beacon that guides lost souls through tempestuous nights.',
-        createdAt: new Date(),
-      },
-    ];
+    try {
+      const { data, error } = await supabase
+        .from('chain_responses')
+        .select(`
+          *,
+          users (username, display_name, avatar_url)
+        `)
+        .eq('whisper_id', whisperId)
+        .order('position', { ascending: true });
+
+      if (error) throw error;
+
+      return (data || []).map(transformChainResponse);
+    } catch (error) {
+      console.error('Error fetching chain responses:', error);
+      return [];
+    }
   },
 
-  createChainResponse: async (whisperId: string, originalText: string): Promise<ChainResponse> => {
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    return {
-      id: Date.now().toString(),
-      whisperId,
-      userId: mockUser.id,
-      originalText,
-      transformedText: await transformText(originalText),
-      createdAt: new Date(),
-    };
+  createChainResponse: async (
+    whisperId: string, 
+    text: string, 
+    userId: string
+  ): Promise<ChainResponse> => {
+    try {
+      // Get the last position in the chain
+      const { data: lastResponse } = await supabase
+        .from('chain_responses')
+        .select('position')
+        .eq('whisper_id', whisperId)
+        .order('position', { ascending: false })
+        .limit(1)
+        .single();
+
+      const position = (lastResponse?.position || 0) + 1;
+
+      const { data, error } = await supabase
+        .from('chain_responses')
+        .insert({
+          whisper_id: whisperId,
+          user_id: userId,
+          original_text: text,
+          transformed_text: text, // In real app, this would be AI-transformed
+          position,
+        })
+        .select(`
+          *,
+          users (username, display_name, avatar_url)
+        `)
+        .single();
+
+      if (error) throw error;
+
+      return transformChainResponse(data);
+    } catch (error) {
+      console.error('Error creating chain response:', error);
+      throw error;
+    }
   },
 
-  // Search
+  // Like operations
+  toggleLike: async (whisperId: string, userId: string): Promise<boolean> => {
+    try {
+      // Check if already liked
+      const { data: existingLike } = await supabase
+        .from('likes')
+        .select('id')
+        .eq('whisper_id', whisperId)
+        .eq('user_id', userId)
+        .single();
+
+      if (existingLike) {
+        // Unlike
+        const { error } = await supabase
+          .from('likes')
+          .delete()
+          .eq('id', existingLike.id);
+        
+        if (error) throw error;
+        return false;
+      } else {
+        // Like
+        const { error } = await supabase
+          .from('likes')
+          .insert({
+            whisper_id: whisperId,
+            user_id: userId,
+          });
+        
+        if (error) throw error;
+        return true;
+      }
+    } catch (error) {
+      console.error('Error toggling like:', error);
+      throw error;
+    }
+  },
+
+  // Theme operations
+  getThemes: async (): Promise<Theme[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('themes')
+        .select('*')
+        .order('name');
+
+      if (error) throw error;
+
+      return (data || []).map(theme => ({
+        id: theme.id,
+        name: theme.name,
+        description: theme.description,
+        accentColor: theme.accent_color,
+        backgroundColor: theme.background_color,
+        gradient: theme.gradient_colors,
+      }));
+    } catch (error) {
+      console.error('Error fetching themes:', error);
+      return [];
+    }
+  },
+
+  // User operations (using Clerk sync)
+  getUserProfile: async (userId: string) => {
+    return ClerkDatabaseSync.getUser(userId);
+  },
+
+  updateUserProfile: async (
+    userId: string,
+    updates: {
+      username?: string;
+      displayName?: string;
+      bio?: string;
+      avatarUrl?: string;
+    }
+  ) => {
+    return ClerkDatabaseSync.updateUserProfile(userId, updates);
+  },
+
+  // Search operations
   searchWhispers: async (query: string): Promise<Whisper[]> => {
-    await new Promise(resolve => setTimeout(resolve, 800));
-    return mockWhispers.filter(whisper => 
-      whisper.transformedText.toLowerCase().includes(query.toLowerCase()) ||
-      whisper.originalText.toLowerCase().includes(query.toLowerCase())
-    );
-  },
-};
+    try {
+      const { data, error } = await supabase
+        .from('whispers')
+        .select(`
+          *,
+          themes (name, accent_color, background_color),
+          users (username, display_name, avatar_url)
+        `)
+        .or(`original_text.ilike.%${query}%,transformed_text.ilike.%${query}%`)
+        .order('created_at', { ascending: false })
+        .limit(20);
 
-// AI transformation service
-const transformText = async (text: string): Promise<string> => {
-  // Simple mock transformation - in real app this would call OpenAI/Gemini API
-  const transformations = [
-    `Like poetry written by moonlight, ${text.toLowerCase()} becomes a symphony of silent understanding.`,
-    `In whispered winds of consciousness, "${text}" transforms into ethereal beauty beyond words.`,
-    `Through the lens of dreams, ${text.toLowerCase()} blooms into verses of the heart's deepest truths.`,
-    `As starlight touches earth, "${text}" becomes a tapestry woven from threads of pure emotion.`,
-    `From the depths of feeling, ${text.toLowerCase()} emerges as art painted with invisible brushstrokes.`,
-  ];
-  
-  return transformations[Math.floor(Math.random() * transformations.length)];
+      if (error) throw error;
+
+      return (data || []).map(transformWhisper);
+    } catch (error) {
+      console.error('Error searching whispers:', error);
+      return [];
+    }
+  },
+
+  // Follow operations
+  toggleFollow: async (followerId: string, followingId: string): Promise<boolean> => {
+    try {
+      // Check if already following
+      const { data: existingFollow } = await supabase
+        .from('follows')
+        .select('id')
+        .eq('follower_id', followerId)
+        .eq('following_id', followingId)
+        .single();
+
+      if (existingFollow) {
+        // Unfollow
+        const { error } = await supabase
+          .from('follows')
+          .delete()
+          .eq('id', existingFollow.id);
+        
+        if (error) throw error;
+        return false;
+      } else {
+        // Follow
+        const { error } = await supabase
+          .from('follows')
+          .insert({
+            follower_id: followerId,
+            following_id: followingId,
+          });
+        
+        if (error) throw error;
+        return true;
+      }
+    } catch (error) {
+      console.error('Error toggling follow:', error);
+      throw error;
+    }
+  },
+
+  getFollowers: async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('follows')
+        .select(`
+          follower:users!follows_follower_id_fkey(
+            id,
+            username,
+            display_name,
+            avatar_url
+          )
+        `)
+        .eq('following_id', userId);
+
+      if (error) throw error;
+
+      return data?.map(f => f.follower) || [];
+    } catch (error) {
+      console.error('Error getting followers:', error);
+      return [];
+    }
+  },
+
+  getFollowing: async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('follows')
+        .select(`
+          following:users!follows_following_id_fkey(
+            id,
+            username,
+            display_name,
+            avatar_url
+          )
+        `)
+        .eq('follower_id', userId);
+
+      if (error) throw error;
+
+      return data?.map(f => f.following) || [];
+    } catch (error) {
+      console.error('Error getting following:', error);
+      return [];
+    }
+  },
 };

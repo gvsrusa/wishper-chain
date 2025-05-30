@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography } from '../constants';
 import { RootStackParamList, Whisper, ChainResponse } from '../types';
+import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 type WhisperChainScreenNavigationProp = StackNavigationProp<RootStackParamList, 'WhisperChain'>;
 type WhisperChainScreenRouteProp = RouteProp<RootStackParamList, 'WhisperChain'>;
@@ -14,67 +16,112 @@ interface Props {
   route: WhisperChainScreenRouteProp;
 }
 
-const mockWhisper: Whisper = {
-  id: '1',
-  userId: 'user1',
-  originalText: 'I feel so alone in this crowded room',
-  transformedText: 'In seas of faces, an island stands alone, yearning for connection across the silent waves.',
-  theme: 'Loneliness',
-  likes: 24,
-  chainCount: 8,
-  createdAt: new Date(),
-  isLiked: false,
-};
-
-const mockChainResponses: ChainResponse[] = [
-  {
-    id: '1',
-    whisperId: '1',
-    userId: 'user2',
-    originalText: 'But sometimes islands become lighthouses',
-    transformedText: 'Yet from solitude springs the beacon that guides lost souls through tempestuous nights.',
-    createdAt: new Date(),
-  },
-  {
-    id: '2',
-    whisperId: '1',
-    userId: 'user3',
-    originalText: 'I see you, fellow wanderer',
-    transformedText: 'Across the void, one heart recognizes another, bridging distance with understanding.',
-    createdAt: new Date(),
-  },
-];
 
 export default function WhisperChainScreen({ navigation, route }: Props) {
-  const [chainResponses, setChainResponses] = useState(mockChainResponses);
+  const { user } = useAuth();
+  const [whisper, setWhisper] = useState<Whisper | null>(null);
+  const [chainResponses, setChainResponses] = useState<ChainResponse[]>([]);
   const [newResponse, setNewResponse] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const handleSubmitResponse = () => {
+  useEffect(() => {
+    loadWhisperAndChain();
+  }, [route.params.whisperId]);
+
+  const loadWhisperAndChain = async () => {
+    try {
+      setLoading(true);
+      const [whisperData, chainData] = await Promise.all([
+        api.getWhisperById(route.params.whisperId, user?.id),
+        api.getChainResponses(route.params.whisperId)
+      ]);
+      
+      if (whisperData) {
+        setWhisper(whisperData);
+      }
+      setChainResponses(chainData);
+    } catch (error) {
+      console.error('Error loading whisper chain:', error);
+      Alert.alert('Error', 'Failed to load whisper chain');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmitResponse = async () => {
+    if (!user) {
+      Alert.alert('Authentication Required', 'Please sign in to add to the chain.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign In', onPress: () => navigation.navigate('Auth') }
+      ]);
+      return;
+    }
+    
     if (!newResponse.trim()) return;
 
     setIsSubmitting(true);
     
-    // Simulate API call and AI transformation
-    setTimeout(() => {
-      const response: ChainResponse = {
-        id: Date.now().toString(),
-        whisperId: route.params.whisperId,
-        userId: 'currentUser',
-        originalText: newResponse,
-        transformedText: `${newResponse} transformed into beautiful prose...`,
-        createdAt: new Date(),
-      };
+    try {
+      const response = await api.createChainResponse(
+        route.params.whisperId,
+        newResponse.trim(),
+        user.id
+      );
       
       setChainResponses(prev => [...prev, response]);
       setNewResponse('');
+      
+      // Update whisper chain count
+      if (whisper) {
+        setWhisper({ ...whisper, chainCount: whisper.chainCount + 1 });
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to add response to chain');
+    } finally {
       setIsSubmitting(false);
-    }, 1500);
+    }
   };
 
-  const getThemeColor = (theme: string) => {
-    return Colors.sadness; // Default for loneliness
+  const getThemeColor = (theme?: string) => {
+    if (!theme) return Colors.abstract;
+    switch (theme.toLowerCase()) {
+      case 'loneliness':
+      case 'sadness':
+        return Colors.sadness;
+      case 'dreams':
+        return Colors.dreams;
+      case 'love':
+        return Colors.love;
+      case 'fear':
+        return Colors.fear;
+      case 'nature':
+        return Colors.nature;
+      case 'joy':
+        return Colors.joy;
+      case 'hope':
+        return Colors.hope;
+      default:
+        return Colors.abstract;
+    }
   };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <ActivityIndicator size="large" color={Colors.primaryAccent} />
+        <Text style={styles.loadingText}>Loading whisper chain...</Text>
+      </View>
+    );
+  }
+
+  if (!whisper) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <Text style={styles.errorText}>Whisper not found</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -91,13 +138,13 @@ export default function WhisperChainScreen({ navigation, route }: Props) {
                 <Text style={styles.timestamp}>2 hours ago</Text>
               </View>
             </View>
-            <View style={[styles.themeTag, { backgroundColor: getThemeColor(mockWhisper.theme || '') }]}>
-              <Text style={styles.themeText}>{mockWhisper.theme}</Text>
+            <View style={[styles.themeTag, { backgroundColor: getThemeColor(whisper.theme) }]}>
+              <Text style={styles.themeText}>{whisper.theme}</Text>
             </View>
           </View>
           
-          <Text style={styles.transformedText}>{mockWhisper.transformedText}</Text>
-          <Text style={styles.originalText}>"{mockWhisper.originalText}"</Text>
+          <Text style={styles.transformedText}>{whisper.transformedText}</Text>
+          <Text style={styles.originalText}>"{whisper.originalText}"</Text>
         </View>
 
         {/* Chain Responses */}
@@ -270,5 +317,19 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     backgroundColor: Colors.disabled,
+  },
+  centerContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: Colors.textSecondary,
+    fontSize: Typography.fontSize.base,
+    marginTop: 16,
+  },
+  errorText: {
+    color: Colors.textSecondary,
+    fontSize: Typography.fontSize.base,
   },
 });

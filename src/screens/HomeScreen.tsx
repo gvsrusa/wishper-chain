@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
@@ -9,51 +9,64 @@ type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList>;
 import { Colors, Typography } from '../constants';
 import { Whisper } from '../types';
 import GuessTheWhispererModal from '../components/GuessTheWhispererModal';
+import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
-const mockWhispers: Whisper[] = [
-  {
-    id: '1',
-    userId: 'user1',
-    originalText: 'I feel so alone in this crowded room',
-    transformedText: 'In seas of faces, an island stands alone, yearning for connection across the silent waves.',
-    theme: 'Loneliness',
-    likes: 24,
-    chainCount: 8,
-    createdAt: new Date(),
-    isLiked: false,
-  },
-  {
-    id: '2',
-    userId: 'user2',
-    originalText: 'Dreaming of flying away from all my problems',
-    transformedText: 'Wings of hope unfurl beneath starlit skies, carrying dreams beyond the weight of earthly burdens.',
-    theme: 'Dreams',
-    likes: 15,
-    chainCount: 12,
-    createdAt: new Date(),
-    isLiked: true,
-  },
-];
 
 export default function HomeScreen() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
-  const [whispers, setWhispers] = useState(mockWhispers);
+  const { user } = useAuth();
+  const [whispers, setWhispers] = useState<Whisper[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState('Trending');
   const [guessModalVisible, setGuessModalVisible] = useState(false);
   const [selectedWhisperId, setSelectedWhisperId] = useState<string>('');
 
-  const handleLike = (whisperId: string) => {
-    setWhispers(prevWhispers =>
-      prevWhispers.map(whisper =>
-        whisper.id === whisperId
-          ? {
-              ...whisper,
-              isLiked: !whisper.isLiked,
-              likes: whisper.isLiked ? whisper.likes - 1 : whisper.likes + 1,
-            }
-          : whisper
-      )
-    );
+  // Load whispers on component mount
+  useEffect(() => {
+    loadWhispers();
+  }, [sortBy]);
+
+  const loadWhispers = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await api.getWhispers(sortBy.toLowerCase(), user?.id);
+      setWhispers(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load whispers');
+      console.error('Error loading whispers:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLike = async (whisperId: string) => {
+    if (!user) {
+      // Could navigate to auth or show login prompt
+      navigation.navigate('Auth');
+      return;
+    }
+    
+    try {
+      const isLiked = await api.toggleLike(whisperId, user.id);
+      // Optimistically update UI
+      setWhispers(prevWhispers =>
+        prevWhispers.map(whisper =>
+          whisper.id === whisperId
+            ? {
+                ...whisper,
+                isLiked: isLiked,
+                likes: isLiked ? whisper.likes + 1 : whisper.likes - 1,
+              }
+            : whisper
+        )
+      );
+    } catch (err) {
+      console.error('Error liking whisper:', err);
+      // Could show toast notification here
+    }
   };
 
   const handleGuess = (whisperId: string) => {
@@ -105,14 +118,31 @@ export default function HomeScreen() {
       </View>
 
       <ScrollView style={styles.feed}>
-        {whispers.map((whisper) => (
+        {loading ? (
+          <View style={styles.centerContainer}>
+            <ActivityIndicator size="large" color={Colors.primaryAccent} />
+            <Text style={styles.loadingText}>Loading whispers...</Text>
+          </View>
+        ) : error ? (
+          <View style={styles.centerContainer}>
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={loadWhispers}>
+              <Text style={styles.retryText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : whispers.length === 0 ? (
+          <View style={styles.centerContainer}>
+            <Text style={styles.emptyText}>No whispers yet. Be the first to share!</Text>
+          </View>
+        ) : (
+          whispers.map((whisper) => (
           <TouchableOpacity 
             key={whisper.id} 
             style={styles.whisperCard}
             onPress={() => handleWhisperPress(whisper.id)}
           >
-            <View style={[styles.themeTag, { backgroundColor: getThemeColor(whisper.theme) }]}>
-              <Text style={styles.themeText}>{whisper.theme}</Text>
+            <View style={[styles.themeTag, { backgroundColor: getThemeColor(whisper.theme || 'abstract') }]}>
+              <Text style={styles.themeText}>{whisper.theme || 'Abstract'}</Text>
             </View>
             
             <Text style={styles.transformedText}>{whisper.transformedText}</Text>
@@ -145,7 +175,8 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
-        ))}
+          ))
+        )}
       </ScrollView>
 
       <GuessTheWhispererModal
@@ -231,5 +262,39 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: Typography.fontSize.sm,
     marginLeft: 4,
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+    minHeight: 200,
+  },
+  loadingText: {
+    color: Colors.textSecondary,
+    fontSize: Typography.fontSize.sm,
+    marginTop: 12,
+  },
+  errorText: {
+    color: Colors.error,
+    fontSize: Typography.fontSize.sm,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  emptyText: {
+    color: Colors.textSecondary,
+    fontSize: Typography.fontSize.lg,
+    textAlign: 'center',
+  },
+  retryButton: {
+    backgroundColor: Colors.primaryAccent,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  retryText: {
+    color: Colors.textPrimary,
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.medium,
   },
 });

@@ -4,6 +4,7 @@ export interface User {
   email?: string;
   isAnonymous: boolean;
   displayName: string;
+  avatarUrl?: string;
   createdAt: Date;
 }
 
@@ -31,9 +32,10 @@ export interface ChainResponse {
 export interface Theme {
   id: string;
   name: string;
-  color: string;
-  icon?: string;
-  whisperCount: number;
+  description?: string;
+  accentColor: string;
+  backgroundColor: string;
+  gradient?: string[];
 }
 
 export interface Achievement {

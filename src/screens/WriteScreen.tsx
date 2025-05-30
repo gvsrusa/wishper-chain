@@ -1,6 +1,13 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { Colors, Typography } from '../constants';
+import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import { useNavigation } from '@react-navigation/native';
+import type { StackNavigationProp } from '@react-navigation/stack';
+import { RootStackParamList } from '../types';
+
+type WriteScreenNavigationProp = StackNavigationProp<RootStackParamList>;
 
 const themes = [
   { name: 'Love', color: Colors.love },
@@ -14,6 +21,8 @@ const themes = [
 ];
 
 export default function WriteScreen() {
+  const navigation = useNavigation<WriteScreenNavigationProp>();
+  const { user } = useAuth();
   const [whisperText, setWhisperText] = useState('');
   const [selectedTheme, setSelectedTheme] = useState<string | null>(null);
   const [customTheme, setCustomTheme] = useState('');
@@ -21,6 +30,14 @@ export default function WriteScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async () => {
+    if (!user) {
+      Alert.alert('Authentication Required', 'Please sign in to create whispers.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign In', onPress: () => navigation.navigate('Auth') }
+      ]);
+      return;
+    }
+    
     if (!whisperText.trim()) {
       Alert.alert('Error', 'Please enter your thoughts before whispering.');
       return;
@@ -28,8 +45,15 @@ export default function WriteScreen() {
 
     setIsSubmitting(true);
     
-    // Simulate AI transformation
-    setTimeout(() => {
+    try {
+      const themeToUse = showCustomTheme ? customTheme.trim() : selectedTheme;
+      
+      await api.createWhisper(
+        whisperText.trim(),
+        themeToUse || 'Abstract',
+        user.id
+      );
+      
       Alert.alert(
         'Whisper Shared!', 
         'Your thoughts have been transformed and shared with the community.',
@@ -38,10 +62,16 @@ export default function WriteScreen() {
           setSelectedTheme(null);
           setCustomTheme('');
           setShowCustomTheme(false);
-          setIsSubmitting(false);
         }}]
       );
-    }, 2000);
+    } catch (error) {
+      Alert.alert(
+        'Error', 
+        error instanceof Error ? error.message : 'Failed to create whisper. Please try again.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const selectTheme = (themeName: string) => {
@@ -123,9 +153,16 @@ export default function WriteScreen() {
         onPress={handleSubmit}
         disabled={!whisperText.trim() || isSubmitting}
       >
-        <Text style={[styles.submitButtonText, (!whisperText.trim() || isSubmitting) && styles.disabledButtonText]}>
-          {isSubmitting ? 'Transforming...' : 'Whisper It'}
-        </Text>
+        {isSubmitting ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator color={Colors.textPrimary} size="small" />
+            <Text style={styles.loadingText}>Transforming...</Text>
+          </View>
+        ) : (
+          <Text style={[styles.submitButtonText, (!whisperText.trim() || isSubmitting) && styles.disabledButtonText]}>
+            Whisper It
+          </Text>
+        )}
       </TouchableOpacity>
     </ScrollView>
   );
@@ -172,13 +209,14 @@ const styles = StyleSheet.create({
   themeChips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    marginHorizontal: -4,
+    marginVertical: -4,
   },
   themeChip: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    marginBottom: 8,
+    margin: 4,
   },
   selectedChip: {
     borderWidth: 2,
@@ -223,5 +261,15 @@ const styles = StyleSheet.create({
   },
   disabledButtonText: {
     color: Colors.textSecondary,
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: Colors.textPrimary,
+    fontSize: Typography.fontSize.lg,
+    fontWeight: Typography.fontWeight.semibold,
+    marginLeft: 8,
   },
 });

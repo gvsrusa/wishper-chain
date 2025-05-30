@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Colors, Typography } from '../constants';
 import { RootStackParamList } from '../types';
+import { useAuth } from '../context/AuthContext';
 
 type SplashScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Splash'>;
 
@@ -11,13 +12,21 @@ interface Props {
 }
 
 export default function SplashScreen({ navigation }: Props) {
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      navigation.replace('Auth');
-    }, 2000);
+  const { isAuthenticated, isLoading } = useAuth();
 
-    return () => clearTimeout(timer);
-  }, [navigation]);
+  useEffect(() => {
+    if (!isLoading) {
+      const timer = setTimeout(() => {
+        if (isAuthenticated) {
+          navigation.replace('Main');
+        } else {
+          navigation.replace('Auth');
+        }
+      }, 1500);
+
+      return () => clearTimeout(timer);
+    }
+  }, [navigation, isAuthenticated, isLoading]);
 
   return (
     <View style={styles.container}>
