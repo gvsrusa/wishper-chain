@@ -54,6 +54,10 @@ class RestOnlyQueryBuilder {
   }
 
   eq(column: string, value: any) {
+    if (value === undefined || value === null) {
+      console.warn(`Warning: eq() called with ${value} for column ${column}`);
+      return this;
+    }
     this.whereConditions.push(`${column}=eq.${encodeURIComponent(value)}`);
     return this;
   }
@@ -76,6 +80,7 @@ class RestOnlyQueryBuilder {
 
   single() {
     this.limitClause = `&limit=1`;
+    this.headers['Accept'] = 'application/vnd.pgrst.object+json';
     return this;
   }
 
@@ -83,12 +88,22 @@ class RestOnlyQueryBuilder {
     const whereClause = this.whereConditions.length > 0 ? `&${this.whereConditions.join('&')}` : '';
     const url = `${this.baseUrl}/${this.table}?select=${this.selectQuery}${whereClause}${this.orderByClause}${this.limitClause}`;
     
+    console.log('Fetching from URL:', url);
+    
     const response = await fetch(url, {
       method: 'GET',
       headers: this.headers,
     });
 
     if (!response.ok) {
+      let errorText = '';
+      try {
+        errorText = await response.text();
+      } catch (e) {
+        errorText = 'Unable to read error response';
+      }
+      console.error('API Error:', response.status, errorText);
+      console.error('Failed URL:', url);
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 

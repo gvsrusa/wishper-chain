@@ -147,7 +147,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     
     try {
       // First, try to sign in with existing anonymous credentials
-      const storedCreds = AnonymousUserService.getStoredAnonymousCredentials();
+      const storedCreds = await AnonymousUserService.getStoredAnonymousCredentials();
       
       if (storedCreds && clerkSignIn) {
         try {
@@ -164,7 +164,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           }
         } catch (error) {
           console.log('Failed to sign in with stored anonymous credentials, creating new ones');
-          AnonymousUserService.clearAnonymousUser();
+          await AnonymousUserService.clearAnonymousUser();
         }
       }
       
@@ -239,7 +239,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       // Clear any anonymous user credentials
       if (user?.isAnonymous) {
-        AnonymousUserService.clearAnonymousUser();
+        await AnonymousUserService.clearAnonymousUser();
       }
       
       // Sign out from Clerk

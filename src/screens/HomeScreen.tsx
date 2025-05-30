@@ -51,7 +51,7 @@ export default function HomeScreen() {
     }
     
     try {
-      const isLiked = await api.toggleLike(whisperId, user.id);
+      const isLiked = await api.toggleLike(whisperId);
       // Optimistically update UI
       setWhispers(prevWhispers =>
         prevWhispers.map(whisper =>

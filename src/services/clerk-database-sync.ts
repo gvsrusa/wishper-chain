@@ -1,7 +1,7 @@
 // Service to sync Clerk users with Supabase database
-// TEMPORARY: Disabled to avoid WebSocket issues
 import type { UserResource } from '@clerk/types';
 import { User } from '../types';
+import { ClerkSupabaseAuth } from './clerk-supabase-auth';
 
 export class ClerkDatabaseSync {
   /**
@@ -9,16 +9,8 @@ export class ClerkDatabaseSync {
    * Called after successful authentication
    */
   static async syncUser(clerkUser: UserResource): Promise<User> {
-    // TEMPORARY: Return mock user data to avoid WebSocket issues
-    return {
-      id: clerkUser.id,
-      email: clerkUser.primaryEmailAddress?.emailAddress || '',
-      username: clerkUser.username || clerkUser.primaryEmailAddress?.emailAddress?.split('@')[0],
-      displayName: clerkUser.fullName || clerkUser.username || 'User',
-      avatarUrl: clerkUser.imageUrl,
-      isAnonymous: false,
-      createdAt: new Date(),
-    };
+    // Use the new auth integration
+    return ClerkSupabaseAuth.syncUser(clerkUser);
   }
 
   /**

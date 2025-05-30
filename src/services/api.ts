@@ -1,6 +1,6 @@
 // Main API service that works with Clerk authentication
-// TEMPORARY: Using mock API to avoid WebSocket issues
-export { api } from './api-mock';
+// Using Clerk-integrated Supabase API
+export { api } from './api-clerk';
 
 // Transform database response to app types
 const transformWhisper = (dbWhisper: any): Whisper => ({

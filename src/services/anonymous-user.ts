@@ -1,7 +1,7 @@
 // Service to handle anonymous users with Clerk
 // Since Clerk doesn't support anonymous auth, we'll create a workaround
 
-import { api } from './api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export class AnonymousUserService {
   private static ANONYMOUS_USER_KEY = 'whisperchain_anonymous_user';
@@ -27,8 +27,8 @@ export class AnonymousUserService {
     const credentials = { email, password, username };
     
     try {
-      // Store in secure storage (you might want to encrypt this)
-      localStorage.setItem(this.ANONYMOUS_USER_KEY, JSON.stringify(credentials));
+      // Store in secure storage
+      await AsyncStorage.setItem(this.ANONYMOUS_USER_KEY, JSON.stringify(credentials));
     } catch (error) {
       console.error('Failed to store anonymous credentials:', error);
     }
@@ -39,13 +39,13 @@ export class AnonymousUserService {
   /**
    * Get stored anonymous credentials if they exist
    */
-  static getStoredAnonymousCredentials(): {
+  static async getStoredAnonymousCredentials(): Promise<{
     email: string;
     password: string;
     username: string;
-  } | null {
+  } | null> {
     try {
-      const stored = localStorage.getItem(this.ANONYMOUS_USER_KEY);
+      const stored = await AsyncStorage.getItem(this.ANONYMOUS_USER_KEY);
       if (stored) {
         return JSON.parse(stored);
       }
@@ -58,9 +58,9 @@ export class AnonymousUserService {
   /**
    * Clear anonymous user data
    */
-  static clearAnonymousUser(): void {
+  static async clearAnonymousUser(): Promise<void> {
     try {
-      localStorage.removeItem(this.ANONYMOUS_USER_KEY);
+      await AsyncStorage.removeItem(this.ANONYMOUS_USER_KEY);
     } catch (error) {
       console.error('Failed to clear anonymous user:', error);
     }
