@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -9,6 +9,7 @@ import {
   ActivityIndicator 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
 import { Colors, Typography } from '../constants';
@@ -31,6 +32,10 @@ export default function SearchScreen({ navigation, route }: Props) {
   const [hasSearched, setHasSearched] = useState(false);
   const [selectedTheme, setSelectedTheme] = useState<string | null>(filterTheme);
   const [themes, setThemes] = useState<Theme[]>([]);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [showLeftGradient, setShowLeftGradient] = useState(false);
+  const [showRightGradient, setShowRightGradient] = useState(true);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     // Load themes on mount
@@ -38,18 +43,44 @@ export default function SearchScreen({ navigation, route }: Props) {
     
     // If we have a filterTheme, load whispers for that theme immediately
     if (filterTheme) {
-      loadThemeWhispers();
+      setIsLoading(true);
+      loadThemeWhispers().finally(() => {
+        setIsLoading(false);
+        setIsInitialLoad(false);
+      });
+    } else if (initialQuery && initialQuery.startsWith('#')) {
+      // If we have an initial hashtag query from trending topics, perform search immediately
+      setHasSearched(true);
+      setIsLoading(true);
+      performSearch().finally(() => {
+        setIsLoading(false);
+        setIsInitialLoad(false);
+      });
+    } else {
+      // Normal search from home screen - don't perform any automatic search
+      setIsInitialLoad(false);
     }
   }, []);
 
   useEffect(() => {
+    // Skip if this is initial load
+    if (isInitialLoad) {
+      return;
+    }
+    
+    // Don't trigger search on every keystroke if we're just loading
+    if (!hasSearched && initialQuery) {
+      return;
+    }
+    
     if (query.length > 2 || selectedTheme) {
       const timeoutId = setTimeout(() => {
         performSearch();
       }, 500);
 
       return () => clearTimeout(timeoutId);
-    } else if (!selectedTheme) {
+    } else if (!selectedTheme && query.length === 0) {
+      // Only clear results if there's no theme selected and no query
       setResults([]);
       setHasSearched(false);
     }
@@ -66,7 +97,7 @@ export default function SearchScreen({ navigation, route }: Props) {
 
   const loadThemeWhispers = async () => {
     if (!selectedTheme) return;
-
+    
     setIsLoading(true);
     setHasSearched(true);
 
@@ -83,7 +114,7 @@ export default function SearchScreen({ navigation, route }: Props) {
 
   const performSearch = async () => {
     if (query.trim().length < 3 && !selectedTheme) return;
-
+    
     setIsLoading(true);
     setHasSearched(true);
 
@@ -120,9 +151,32 @@ export default function SearchScreen({ navigation, route }: Props) {
     }
   };
 
-  const handleThemeSelect = (theme: string | null) => {
+  const handleThemeSelect = async (theme: string | null) => {
+    // Prevent unnecessary re-renders by checking if theme actually changed
+    if (theme === selectedTheme) return;
+    
     setSelectedTheme(theme);
     setQuery(''); // Clear query when switching themes
+    
+    setIsLoading(true);
+    setHasSearched(true);
+    
+    try {
+      if (theme) {
+        // Load specific theme whispers
+        const themeWhispers = await api.getWhispersByTheme(theme);
+        setResults(themeWhispers);
+      } else {
+        // If "All" is selected, load all whispers
+        const allWhispers = await api.getWhispers('recent');
+        setResults(allWhispers);
+      }
+    } catch (error) {
+      console.error('Error loading whispers:', error);
+      setResults([]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleWhisperPress = (whisperId: string) => {
@@ -151,6 +205,16 @@ export default function SearchScreen({ navigation, route }: Props) {
     }
   };
 
+  const handleScroll = (event: any) => {
+    const { contentOffset, layoutMeasurement, contentSize } = event.nativeEvent;
+    const scrollX = contentOffset.x;
+    const maxScrollX = contentSize.width - layoutMeasurement.width;
+    
+    // Show/hide gradients based on scroll position
+    setShowLeftGradient(scrollX > 10);
+    setShowRightGradient(scrollX < maxScrollX - 10);
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.searchHeader}>
@@ -173,45 +237,74 @@ export default function SearchScreen({ navigation, route }: Props) {
       </View>
 
       {/* Theme filter chips */}
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false} 
-        style={styles.themeFilters}
-        contentContainerStyle={styles.themeFiltersContent}
-      >
-        <TouchableOpacity
-          style={[
-            styles.themeChip,
-            !selectedTheme && styles.themeChipActive
-          ]}
-          onPress={() => handleThemeSelect(null)}
+      <View style={styles.themeFiltersContainer}>
+        <ScrollView 
+          ref={scrollViewRef}
+          horizontal 
+          showsHorizontalScrollIndicator={false} 
+          style={styles.themeFilters}
+          contentContainerStyle={styles.themeFiltersContent}
+          bounces={false}
+          scrollEventThrottle={16}
+          decelerationRate="fast"
+          onScroll={handleScroll}
         >
-          <Text style={[
-            styles.themeChipText,
-            !selectedTheme && styles.themeChipTextActive
-          ]}>All</Text>
-        </TouchableOpacity>
-        
-        {themes.map((theme) => (
           <TouchableOpacity
-            key={theme.id}
             style={[
               styles.themeChip,
-              selectedTheme === theme.name && styles.themeChipActive,
-              { borderColor: theme.accentColor }
+              !selectedTheme && styles.themeChipActive
             ]}
-            onPress={() => handleThemeSelect(theme.name)}
+            onPress={() => handleThemeSelect(null)}
           >
             <Text style={[
               styles.themeChipText,
-              selectedTheme === theme.name && styles.themeChipTextActive
-            ]}>{theme.name}</Text>
+              !selectedTheme && styles.themeChipTextActive
+            ]}>All</Text>
           </TouchableOpacity>
-        ))}
-      </ScrollView>
+          
+          {themes.map((theme) => (
+            <TouchableOpacity
+              key={theme.id}
+              style={[
+                styles.themeChip,
+                selectedTheme === theme.name && styles.themeChipActive,
+                { borderColor: theme.accentColor }
+              ]}
+              onPress={() => handleThemeSelect(theme.name)}
+            >
+              <Text style={[
+                styles.themeChipText,
+                selectedTheme === theme.name && styles.themeChipTextActive
+              ]}>{theme.name}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        
+        {/* Left gradient indicator */}
+        {showLeftGradient && (
+          <LinearGradient
+            colors={[Colors.primaryBackground, 'transparent']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.leftGradient}
+            pointerEvents="none"
+          />
+        )}
+        
+        {/* Right gradient indicator */}
+        {showRightGradient && (
+          <LinearGradient
+            colors={['transparent', Colors.primaryBackground]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.rightGradient}
+            pointerEvents="none"
+          />
+        )}
+      </View>
 
       <ScrollView style={styles.content}>
-        {isLoading && (
+        {isLoading && results.length === 0 && (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={Colors.primaryAccent} />
             <Text style={styles.loadingText}>Searching whispers...</Text>
@@ -230,7 +323,7 @@ export default function SearchScreen({ navigation, route }: Props) {
           </View>
         )}
 
-        {!isLoading && !hasSearched && query.length === 0 && !selectedTheme && (
+        {!isLoading && !hasSearched && query.length === 0 && !selectedTheme && !initialQuery && (
           <View style={styles.emptyContainer}>
             <Ionicons name="search" size={64} color={Colors.textSecondary} />
             <Text style={styles.emptyTitle}>Search Whispers</Text>
@@ -420,16 +513,22 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.xs,
     marginLeft: 4,
   },
-  themeFilters: {
-    maxHeight: 50,
-    marginBottom: 8,
+  themeFiltersContainer: {
+    height: 60,
     borderBottomWidth: 1,
     borderBottomColor: Colors.cardBackground,
+    backgroundColor: Colors.primaryBackground,
+    position: 'relative',
+  },
+  themeFilters: {
+    flex: 1,
   },
   themeFiltersContent: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     gap: 8,
+    alignItems: 'center',
+    paddingRight: 50, // Extra padding for last item to ensure it's visible
   },
   themeChip: {
     paddingHorizontal: 16,
@@ -451,5 +550,21 @@ const styles = StyleSheet.create({
   },
   themeChipTextActive: {
     color: Colors.textPrimary,
+  },
+  leftGradient: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 30,
+    zIndex: 1,
+  },
+  rightGradient: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 30,
+    zIndex: 1,
   },
 });
