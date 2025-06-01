@@ -147,8 +147,14 @@ export default function SearchScreen({ navigation }: Props) {
                   <Text style={styles.themeText}>{whisper.theme}</Text>
                 </View>
                 
-                <Text style={styles.transformedText}>{whisper.transformedText}</Text>
-                <Text style={styles.originalText}>"{whisper.originalText}"</Text>
+                <View style={styles.textContent}>
+                  <Text style={styles.transformedText} numberOfLines={0}>
+                    {whisper.transformedText}
+                  </Text>
+                  <Text style={styles.originalText} numberOfLines={0}>
+                    "{whisper.originalText}"
+                  </Text>
+                </View>
                 
                 <View style={styles.interactionBar}>
                   <View style={styles.interactionButton}>
@@ -254,6 +260,8 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     marginBottom: 12,
+    overflow: 'hidden',
+    minHeight: 120,
   },
   themeTag: {
     alignSelf: 'flex-start',
@@ -267,27 +275,34 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.xs,
     fontWeight: Typography.fontWeight.medium,
   },
+  textContent: {
+    flex: 1,
+    width: '100%',
+  },
   transformedText: {
     color: Colors.textPrimary,
     fontSize: Typography.fontSize.base,
-    lineHeight: Typography.lineHeight.normal,
+    lineHeight: Typography.fontSize.base * Typography.lineHeight.normal,
     marginBottom: 8,
+    flexWrap: 'wrap',
   },
   originalText: {
     color: Colors.textSecondary,
     fontSize: Typography.fontSize.sm,
     fontStyle: 'italic',
     marginBottom: 16,
+    flexWrap: 'wrap',
+    lineHeight: Typography.fontSize.sm * Typography.lineHeight.normal,
   },
   interactionBar: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    gap: 24,
   },
   interactionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
-    justifyContent: 'center',
   },
   interactionText: {
     color: Colors.textSecondary,
