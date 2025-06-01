@@ -7,11 +7,13 @@ import {
   ScrollView, 
   StyleSheet,
   Alert,
-  Platform
+  Platform,
+  Dimensions
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography } from '../constants';
 import { Picker } from '@react-native-picker/picker';
+import Svg, { Path, G, Circle } from 'react-native-svg';
 
 interface Props {
   visible: boolean;
@@ -60,10 +62,56 @@ export default function GuessTheWhispererModal({ visible, onClose, whisperId }: 
   };
 
   if (showStats) {
+    // Data for visualizations
+    const ageData = [
+      { label: '19-25', value: 45, color: Colors.primaryAccent },
+      { label: '26-40', value: 30, color: Colors.secondaryAccent },
+      { label: '13-18', value: 15, color: Colors.dreams },
+      { label: '41+', value: 10, color: Colors.hope },
+    ];
+
+    // Create pie chart paths
+    const createPieSlice = () => {
+      const total = ageData.reduce((sum, item) => sum + item.value, 0);
+      let cumulativePercentage = 0;
+      const size = 150;
+      const center = size / 2;
+      const radius = size / 2 - 15;
+
+      return ageData.map((item) => {
+        const percentage = item.value / total;
+        const startAngle = cumulativePercentage * Math.PI * 2 - Math.PI / 2;
+        const endAngle = (cumulativePercentage + percentage) * Math.PI * 2 - Math.PI / 2;
+        
+        const x1 = center + radius * Math.cos(startAngle);
+        const y1 = center + radius * Math.sin(startAngle);
+        const x2 = center + radius * Math.cos(endAngle);
+        const y2 = center + radius * Math.sin(endAngle);
+        
+        const largeArcFlag = percentage > 0.5 ? 1 : 0;
+        
+        const pathData = [
+          `M ${center} ${center}`,
+          `L ${x1} ${y1}`,
+          `A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2}`,
+          'Z'
+        ].join(' ');
+        
+        cumulativePercentage += percentage;
+        
+        return {
+          ...item,
+          path: pathData,
+        };
+      });
+    };
+
+    const pieData = createPieSlice();
+
     return (
       <Modal visible={visible} transparent animationType="fade" statusBarTranslucent>
         <View style={styles.overlay}>
-          <View style={styles.modal}>
+          <View style={[styles.modal, styles.statsModal]}>
             <View style={styles.header}>
               <Text style={styles.title}>Community Insights</Text>
               <TouchableOpacity onPress={resetAndClose}>
@@ -71,50 +119,113 @@ export default function GuessTheWhispererModal({ visible, onClose, whisperId }: 
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.content}>
-              <Text style={styles.subtitle}>
-                Here's what the community guessed about this whisperer:
-              </Text>
-
-              <View style={styles.statSection}>
-                <Text style={styles.statTitle}>Age Range</Text>
-                <View style={styles.statBar}>
-                  <View style={[styles.statSegment, { flex: 3 }]}>
-                    <Text style={styles.statLabel}>19-25: 45%</Text>
-                  </View>
-                  <View style={[styles.statSegment, { flex: 2 }]}>
-                    <Text style={styles.statLabel}>26-40: 30%</Text>
-                  </View>
-                  <View style={[styles.statSegment, { flex: 1.5 }]}>
-                    <Text style={styles.statLabel}>13-18: 15%</Text>
-                  </View>
-                  <View style={[styles.statSegment, { flex: 1 }]}>
-                    <Text style={styles.statLabel}>41+: 10%</Text>
-                  </View>
-                </View>
-              </View>
-
-              <View style={styles.statSection}>
-                <Text style={styles.statTitle}>Most Guessed Country</Text>
-                <Text style={styles.bigStat}>United States (38%)</Text>
-                <Text style={styles.statSubtext}>
-                  Followed by Canada (22%) and United Kingdom (15%)
+            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+              <View style={styles.insightHeader}>
+                <Ionicons name="analytics" size={20} color={Colors.primaryAccent} />
+                <Text style={[styles.insightSubtitle, { marginLeft: 8 }]}>
+                  Based on {Math.floor(Math.random() * 900 + 100)} community guesses
                 </Text>
               </View>
 
+              {/* Age Distribution Pie Chart */}
               <View style={styles.statSection}>
-                <Text style={styles.statTitle}>Gender Distribution</Text>
-                <View style={styles.genderStats}>
-                  <Text style={styles.statText}>Female: 52%</Text>
-                  <Text style={styles.statText}>Male: 35%</Text>
-                  <Text style={styles.statText}>Other/Prefer not to say: 13%</Text>
+                <Text style={styles.statTitle}>Age Distribution</Text>
+                <View style={styles.pieChartContainer}>
+                  <Svg width={150} height={150} viewBox="0 0 150 150">
+                    <G>
+                      {pieData.map((slice, index) => (
+                        <Path
+                          key={index}
+                          d={slice.path}
+                          fill={slice.color}
+                          stroke={Colors.modalBackground}
+                          strokeWidth={2}
+                        />
+                      ))}
+                    </G>
+                    {/* Center circle for donut effect */}
+                    <Circle
+                      cx={75}
+                      cy={75}
+                      r={30}
+                      fill={Colors.modalBackground}
+                    />
+                  </Svg>
+                  <View style={styles.pieChartLegend}>
+                    {ageData.map((item, index) => (
+                      <View key={index} style={styles.legendItem}>
+                        <View style={[styles.legendDot, { backgroundColor: item.color }]} />
+                        <Text style={styles.legendText}>{item.label}</Text>
+                        <Text style={styles.legendPercent}>{item.value}%</Text>
+                      </View>
+                    ))}
+                  </View>
                 </View>
               </View>
 
-              <Text style={styles.disclaimer}>
-                These insights are based on anonymous community guesses and do not reveal 
-                the actual whisperer's identity or demographics.
-              </Text>
+              {/* Country Distribution */}
+              <View style={styles.statSection}>
+                <Text style={styles.statTitle}>Geographic Distribution</Text>
+                <View style={styles.countryContainer}>
+                  <View style={styles.countryItem}>
+                    <Text style={styles.countryName}>🇺🇸 United States</Text>
+                    <View style={styles.countryBarBg}>
+                      <View style={[styles.countryBar, { width: '38%' }]} />
+                      <Text style={styles.countryPercent}>38%</Text>
+                    </View>
+                  </View>
+                  <View style={styles.countryItem}>
+                    <Text style={styles.countryName}>🇨🇦 Canada</Text>
+                    <View style={styles.countryBarBg}>
+                      <View style={[styles.countryBar, { width: '22%' }]} />
+                      <Text style={styles.countryPercent}>22%</Text>
+                    </View>
+                  </View>
+                  <View style={styles.countryItem}>
+                    <Text style={styles.countryName}>🇬🇧 United Kingdom</Text>
+                    <View style={styles.countryBarBg}>
+                      <View style={[styles.countryBar, { width: '15%' }]} />
+                      <Text style={styles.countryPercent}>15%</Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+
+              {/* Gender Distribution */}
+              <View style={styles.statSection}>
+                <Text style={styles.statTitle}>Gender Distribution</Text>
+                <View style={styles.genderContainer}>
+                  <View style={styles.genderCard}>
+                    <View style={[styles.genderCircle, { backgroundColor: Colors.love + '20' }]}>
+                      <Text style={[styles.genderIcon, { color: Colors.love }]}>♀</Text>
+                    </View>
+                    <Text style={styles.genderPercent}>52%</Text>
+                    <Text style={styles.genderLabel}>Female</Text>
+                  </View>
+                  <View style={styles.genderCard}>
+                    <View style={[styles.genderCircle, { backgroundColor: Colors.dreams + '20' }]}>
+                      <Text style={[styles.genderIcon, { color: Colors.dreams }]}>♂</Text>
+                    </View>
+                    <Text style={styles.genderPercent}>35%</Text>
+                    <Text style={styles.genderLabel}>Male</Text>
+                  </View>
+                  <View style={styles.genderCard}>
+                    <View style={[styles.genderCircle, { backgroundColor: Colors.hope + '20' }]}>
+                      <Text style={[styles.genderIcon, { color: Colors.hope }]}>⚧</Text>
+                    </View>
+                    <Text style={styles.genderPercent}>13%</Text>
+                    <Text style={styles.genderLabel}>Other</Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.disclaimerBox}>
+                <Ionicons name="information-circle" size={16} color={Colors.textSecondary} />
+                <Text style={[styles.disclaimer, { marginLeft: 8 }]}>
+                  These insights are based on anonymous community guesses and do not reveal 
+                  the actual whisperer's identity or demographics.
+                </Text>
+              </View>
             </ScrollView>
           </View>
         </View>
@@ -369,57 +480,6 @@ const styles = StyleSheet.create({
   disabledButtonText: {
     color: Colors.textSecondary,
   },
-  statSection: {
-    marginBottom: 20,
-  },
-  statTitle: {
-    color: Colors.textPrimary,
-    fontSize: Typography.fontSize.base,
-    fontWeight: Typography.fontWeight.semibold,
-    marginBottom: 8,
-  },
-  statBar: {
-    flexDirection: 'row',
-    height: 40,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  statSegment: {
-    backgroundColor: Colors.primaryAccent,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 2,
-  },
-  statLabel: {
-    color: Colors.textPrimary,
-    fontSize: Typography.fontSize.xs,
-    fontWeight: Typography.fontWeight.medium,
-  },
-  bigStat: {
-    color: Colors.primaryAccent,
-    fontSize: Typography.fontSize.xl,
-    fontWeight: Typography.fontWeight.bold,
-  },
-  statSubtext: {
-    color: Colors.textSecondary,
-    fontSize: Typography.fontSize.sm,
-    marginTop: 4,
-  },
-  genderStats: {
-    marginVertical: -2,
-  },
-  statText: {
-    color: Colors.textSecondary,
-    fontSize: Typography.fontSize.sm,
-    marginVertical: 2,
-  },
-  disclaimer: {
-    color: Colors.textSecondary,
-    fontSize: Typography.fontSize.xs,
-    fontStyle: 'italic',
-    textAlign: 'center',
-    marginTop: 16,
-  },
   pickerButton: {
     backgroundColor: Colors.cardBackground,
     borderRadius: 12,
@@ -465,5 +525,134 @@ const styles = StyleSheet.create({
   iosPicker: {
     backgroundColor: Colors.cardBackground,
     height: 200,
+  },
+  statsModal: {
+    maxHeight: '90%',
+  },
+  insightHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  insightSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: Typography.fontSize.sm,
+  },
+  statSection: {
+    marginBottom: 28,
+  },
+  statTitle: {
+    color: Colors.textPrimary,
+    fontSize: Typography.fontSize.lg,
+    fontWeight: Typography.fontWeight.bold,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  pieChartContainer: {
+    alignItems: 'center',
+  },
+  pieChartLegend: {
+    marginTop: 16,
+    width: '100%',
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 4,
+    paddingHorizontal: 20,
+  },
+  legendDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  legendText: {
+    color: Colors.textPrimary,
+    fontSize: Typography.fontSize.sm,
+    flex: 1,
+  },
+  legendPercent: {
+    color: Colors.textSecondary,
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.semibold,
+  },
+  countryContainer: {
+    paddingHorizontal: 20,
+  },
+  countryItem: {
+    marginBottom: 12,
+  },
+  countryName: {
+    color: Colors.textPrimary,
+    fontSize: Typography.fontSize.sm,
+    marginBottom: 4,
+  },
+  countryBarBg: {
+    height: 24,
+    backgroundColor: Colors.cardBackground,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  countryBar: {
+    height: '100%',
+    backgroundColor: Colors.primaryAccent,
+    borderRadius: 12,
+  },
+  countryPercent: {
+    position: 'absolute',
+    right: 8,
+    color: Colors.textPrimary,
+    fontSize: Typography.fontSize.xs,
+    fontWeight: Typography.fontWeight.semibold,
+  },
+  genderContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingHorizontal: 20,
+  },
+  genderCard: {
+    alignItems: 'center',
+  },
+  genderCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  genderIcon: {
+    fontSize: 24,
+    fontWeight: Typography.fontWeight.bold,
+  },
+  genderPercent: {
+    color: Colors.textPrimary,
+    fontSize: Typography.fontSize.xl,
+    fontWeight: Typography.fontWeight.bold,
+    marginBottom: 4,
+  },
+  genderLabel: {
+    color: Colors.textSecondary,
+    fontSize: Typography.fontSize.sm,
+  },
+  disclaimerBox: {
+    flexDirection: 'row',
+    backgroundColor: Colors.cardBackground,
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 8,
+    marginHorizontal: 20,
+    marginBottom: 20,
+  },
+  disclaimer: {
+    color: Colors.textSecondary,
+    fontSize: Typography.fontSize.xs,
+    fontStyle: 'italic',
+    flex: 1,
+    lineHeight: Typography.lineHeight.normal * Typography.fontSize.xs,
   },
 });
