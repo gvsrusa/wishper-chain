@@ -32,6 +32,7 @@ export default function ThemesScreen() {
   const navigation = useNavigation<ThemesScreenNavigationProp>();
   const { user } = useAuth();
   const [themes, setThemes] = useState<ThemeWithCount[]>([]);
+  const [trendingHashtags, setTrendingHashtags] = useState<{ tag: string; count: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,6 +40,7 @@ export default function ThemesScreen() {
   useFocusEffect(
     React.useCallback(() => {
       loadThemes();
+      loadTrendingHashtags();
     }, [])
   );
 
@@ -64,6 +66,24 @@ export default function ThemesScreen() {
       setError('Failed to load themes');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadTrendingHashtags = async () => {
+    try {
+      const hashtags = await api.getTrendingHashtags(6);
+      setTrendingHashtags(hashtags);
+    } catch (err) {
+      console.error('Error loading trending hashtags:', err);
+      // Use default hashtags as fallback
+      setTrendingHashtags([
+        { tag: '#LateNightThoughts', count: 86 },
+        { tag: '#MidnightConfessions', count: 54 },
+        { tag: '#SoulSearching', count: 42 },
+        { tag: '#InnerVoice', count: 38 },
+        { tag: '#QuietMoments', count: 29 },
+        { tag: '#DeepFeels', count: 23 },
+      ]);
     }
   };
 
@@ -141,14 +161,7 @@ export default function ThemesScreen() {
       <View style={styles.trendingSection}>
         <Text style={styles.trendingTitle}>Trending Topics</Text>
         <View style={styles.trendingContainer}>
-          {[
-            { tag: '#LateNightThoughts', count: 86 },
-            { tag: '#MidnightConfessions', count: 54 },
-            { tag: '#SoulSearching', count: 42 },
-            { tag: '#InnerVoice', count: 38 },
-            { tag: '#QuietMoments', count: 29 },
-            { tag: '#DeepFeels', count: 23 },
-          ].map((topic, index) => (
+          {trendingHashtags.map((topic, index) => (
             <TouchableOpacity 
               key={index} 
               style={styles.trendingTag}

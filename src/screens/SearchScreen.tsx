@@ -90,7 +90,13 @@ export default function SearchScreen({ navigation, route }: Props) {
     try {
       let searchResults: Whisper[] = [];
       
-      if (selectedTheme && query.trim().length > 0) {
+      // Check if query is a hashtag - if so, use hashtag search
+      const isHashtagQuery = query.trim().startsWith('#');
+      
+      if (isHashtagQuery && query.trim().length > 1) {
+        // Search by hashtag
+        searchResults = await api.searchWhispersByHashtag(query.trim());
+      } else if (selectedTheme && query.trim().length > 0) {
         // Search within theme
         const themeWhispers = await api.getWhispersByTheme(selectedTheme);
         searchResults = themeWhispers.filter(whisper => 

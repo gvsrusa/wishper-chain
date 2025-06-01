@@ -36,6 +36,7 @@ interface DbWhisper {
   username?: string;
   display_name?: string;
   users?: { id: string; username: string; display_name: string };
+  ai_hashtags?: string[];
 }
 
 interface DbChainResponse {
@@ -286,7 +287,7 @@ export const api = {
     }
 
     // Transform text using AI (placeholder)
-    const transformedText = await transformText(originalText);
+    const { transformed, hashtags } = await transformText(originalText);
 
     // First insert the whisper
     const { error: insertError } = await supabase
@@ -294,8 +295,9 @@ export const api = {
       .insert({
         user_id: userId,
         original_text: originalText,
-        transformed_text: transformedText,
+        transformed_text: transformed,
         theme_id: themeId,
+        ai_hashtags: hashtags,
       });
 
     if (insertError) {
@@ -498,7 +500,7 @@ export const api = {
       console.log('Next response order:', nextOrder);
 
       // Transform text using AI
-      const transformedText = await transformText(originalText);
+      const { transformed: transformedText } = await transformText(originalText);
 
       // Generate a temporary ID for optimistic UI update
       const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
@@ -722,6 +724,108 @@ export const api = {
     }
   },
 
+  getTrendingHashtags: async (limit: number = 10): Promise<{ tag: string; count: number }[]> => {
+    try {
+      console.log('Fetching trending hashtags...');
+      
+      // Call the database function to get trending hashtags
+      const { data, error } = await supabase.rpc('get_trending_hashtags', {
+        days_back: 7,
+        limit_count: limit
+      });
+
+      if (error) {
+        console.error('Error fetching trending hashtags:', error);
+        // Return default hashtags as fallback
+        return [
+          { tag: '#LateNightThoughts', count: 86 },
+          { tag: '#MidnightConfessions', count: 54 },
+          { tag: '#SoulSearching', count: 42 },
+          { tag: '#InnerVoice', count: 38 },
+          { tag: '#QuietMoments', count: 29 },
+          { tag: '#DeepFeels', count: 23 },
+        ];
+      }
+
+      if (!data || data.length === 0) {
+        // Return some seed hashtags to encourage usage
+        return [
+          { tag: '#FirstWhisper', count: 1 },
+          { tag: '#MyThoughts', count: 1 },
+          { tag: '#Feelings', count: 1 },
+        ];
+      }
+
+      return data.map((item: any) => ({
+        tag: item.hashtag,
+        count: parseInt(item.count) || 0,
+      }));
+    } catch (error) {
+      console.error('Error in getTrendingHashtags:', error);
+      return [];
+    }
+  },
+
+  searchWhispersByHashtag: async (hashtag: string): Promise<Whisper[]> => {
+    try {
+      // Normalize the hashtag
+      const normalizedTag = hashtag.toLowerCase().startsWith('#') 
+        ? hashtag.toLowerCase() 
+        : `#${hashtag.toLowerCase()}`;
+
+      console.log('Searching for whispers with hashtag:', normalizedTag);
+
+      // Get whispers that contain this hashtag in ai_hashtags array
+      const { data: whispers, error } = await supabase
+        .from('whispers')
+        .select('*')
+        .contains('ai_hashtags', [normalizedTag])
+        .eq('is_published', true)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error searching by hashtag:', error);
+        return [];
+      }
+
+      if (!whispers || whispers.length === 0) {
+        return [];
+      }
+
+      // Process whispers with related data
+      const currentUserId = getCurrentUserId();
+      const themeIds = [...new Set(whispers.map((w: DbWhisper) => w.theme_id).filter(Boolean))];
+      const userIds = [...new Set(whispers.map((w: DbWhisper) => w.user_id).filter(Boolean))];
+
+      const [themesResult, usersResult, likesResult] = await Promise.all([
+        themeIds.length > 0 ? supabase.from('themes').select('id, name, color').in('id', themeIds) : null,
+        userIds.length > 0 ? supabase.from('users').select('id, username, display_name').in('id', userIds) : null,
+        currentUserId ? supabase.from('likes').select('whisper_id').eq('user_id', currentUserId) : null
+      ]);
+
+      const themeMap = new Map(themesResult?.data?.map((t: DbTheme) => [t.id, t]) || []);
+      const userMap = new Map(usersResult?.data?.map((u: DbUser) => [u.id, u]) || []);
+      const likedWhisperIds = new Set(likesResult?.data?.map((l: DbLike) => l.whisper_id) || []);
+
+      return whispers.map((w: DbWhisper) => {
+        const theme = themeMap.get(w.theme_id || '') as DbTheme | undefined;
+        const user = userMap.get(w.user_id) as DbUser | undefined;
+        return transformWhisper({
+          ...w,
+          theme_name: theme?.name,
+          themes: theme,
+          username: user?.username,
+          display_name: user?.display_name,
+          users: user,
+          is_liked: likedWhisperIds.has(w.id),
+        });
+      });
+    } catch (error) {
+      console.error('Error searching whispers by hashtag:', error);
+      return [];
+    }
+  },
+
   getWhispersByTheme: async (themeName: string): Promise<Whisper[]> => {
     // First get the theme ID
     const { data: themeData } = await supabase
@@ -774,7 +878,7 @@ export const api = {
 };
 
 // AI transformation service (placeholder)
-const transformText = async (text: string): Promise<string> => {
+const transformText = async (text: string): Promise<{ transformed: string; hashtags: string[] }> => {
   // TODO: Replace with actual AI service (OpenAI, Gemini, etc.)
   const transformations = [
     `Like whispers in the wind, "${text}" dances through eternity`,
@@ -787,5 +891,78 @@ const transformText = async (text: string): Promise<string> => {
   // Simulate AI processing delay
   await new Promise(resolve => setTimeout(resolve, 500));
   
-  return transformations[Math.floor(Math.random() * transformations.length)];
+  const transformed = transformations[Math.floor(Math.random() * transformations.length)];
+  const hashtags = generateHashtagsFromText(text);
+  
+  return { transformed, hashtags };
+};
+
+// Generate hashtags based on text content and context
+const generateHashtagsFromText = (text: string): string[] => {
+  const hashtags: string[] = [];
+  const lowerText = text.toLowerCase();
+  
+  // Time-based hashtags
+  const hour = new Date().getHours();
+  if (hour >= 22 || hour <= 3) {
+    hashtags.push('#LateNightThoughts');
+  } else if (hour >= 4 && hour <= 6) {
+    hashtags.push('#EarlyMorningWhispers');
+  } else if (hour >= 17 && hour <= 19) {
+    hashtags.push('#EveningReflections');
+  }
+  
+  // Emotion-based hashtags
+  if (lowerText.includes('love') || lowerText.includes('heart')) {
+    hashtags.push('#LoveWhispers');
+  }
+  if (lowerText.includes('dream') || lowerText.includes('sleep')) {
+    hashtags.push('#DreamScape');
+  }
+  if (lowerText.includes('sad') || lowerText.includes('cry') || lowerText.includes('tears')) {
+    hashtags.push('#EmotionalRelease');
+  }
+  if (lowerText.includes('happy') || lowerText.includes('joy') || lowerText.includes('smile')) {
+    hashtags.push('#JoyfulMoments');
+  }
+  if (lowerText.includes('miss') || lowerText.includes('memory') || lowerText.includes('remember')) {
+    hashtags.push('#Nostalgia');
+  }
+  if (lowerText.includes('hope') || lowerText.includes('wish') || lowerText.includes('future')) {
+    hashtags.push('#HopefulWhispers');
+  }
+  if (lowerText.includes('fear') || lowerText.includes('scared') || lowerText.includes('afraid')) {
+    hashtags.push('#FacingFears');
+  }
+  
+  // Content-based hashtags
+  if (lowerText.includes('confession') || lowerText.includes('secret')) {
+    hashtags.push('#SecretConfessions');
+  }
+  if (lowerText.includes('soul') || lowerText.includes('spirit')) {
+    hashtags.push('#SoulSearching');
+  }
+  if (lowerText.includes('quiet') || lowerText.includes('silence') || lowerText.includes('peace')) {
+    hashtags.push('#QuietMoments');
+  }
+  if (lowerText.includes('feeling') || lowerText.includes('emotion')) {
+    hashtags.push('#DeepFeels');
+  }
+  if (lowerText.includes('voice') || lowerText.includes('speak') || lowerText.includes('say')) {
+    hashtags.push('#InnerVoice');
+  }
+  
+  // If no specific hashtags match, add general ones based on length/mood
+  if (hashtags.length === 0) {
+    if (text.length < 50) {
+      hashtags.push('#BriefThoughts');
+    } else if (text.length > 200) {
+      hashtags.push('#DeepContemplation');
+    } else {
+      hashtags.push('#RandomWhispers');
+    }
+  }
+  
+  // Limit to 3 hashtags maximum
+  return hashtags.slice(0, 3);
 };
