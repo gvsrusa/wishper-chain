@@ -22,7 +22,8 @@ export default function HomeScreen() {
   const [whispers, setWhispers] = useState<Whisper[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sortBy, setSortBy] = useState('Trending');
+  const [sortBy, setSortBy] = useState('Recent');
+  const [showSortMenu, setShowSortMenu] = useState(false);
   const [guessModalVisible, setGuessModalVisible] = useState(false);
   const [selectedWhisperId, setSelectedWhisperId] = useState<string>('');
 
@@ -128,10 +129,54 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.sortButton}>
-          <Text style={styles.sortText}>{sortBy}</Text>
-          <Ionicons name="chevron-down" size={16} color={Colors.textSecondary} />
-        </TouchableOpacity>
+        <View>
+          <TouchableOpacity 
+            style={styles.sortButton}
+            onPress={() => setShowSortMenu(!showSortMenu)}
+          >
+            <Text style={styles.sortText}>{sortBy}</Text>
+            <Ionicons name="chevron-down" size={16} color={Colors.textSecondary} />
+          </TouchableOpacity>
+          
+          {showSortMenu && (
+            <View style={styles.sortMenu}>
+              <TouchableOpacity 
+                style={styles.sortMenuItem}
+                onPress={() => {
+                  setSortBy('Recent');
+                  setShowSortMenu(false);
+                }}
+              >
+                <Text style={[styles.sortMenuText, sortBy === 'Recent' && styles.sortMenuTextActive]}>
+                  Recent
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.sortMenuItem}
+                onPress={() => {
+                  setSortBy('Trending');
+                  setShowSortMenu(false);
+                }}
+              >
+                <Text style={[styles.sortMenuText, sortBy === 'Trending' && styles.sortMenuTextActive]}>
+                  Trending
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.sortMenuItem}
+                onPress={() => {
+                  setSortBy('Chains');
+                  setShowSortMenu(false);
+                }}
+              >
+                <Text style={[styles.sortMenuText, sortBy === 'Chains' && styles.sortMenuTextActive]}>
+                  Most Chains
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+        
         <TouchableOpacity onPress={handleSearchPress}>
           <Ionicons name="search" size={24} color={Colors.textSecondary} />
         </TouchableOpacity>
@@ -332,5 +377,35 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     fontSize: Typography.fontSize.sm,
     fontWeight: Typography.fontWeight.medium,
+  },
+  sortMenu: {
+    position: 'absolute',
+    top: 40,
+    left: 0,
+    backgroundColor: Colors.cardBackground,
+    borderRadius: 12,
+    padding: 8,
+    minWidth: 150,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    zIndex: 1000,
+  },
+  sortMenuItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  sortMenuText: {
+    color: Colors.textSecondary,
+    fontSize: Typography.fontSize.sm,
+  },
+  sortMenuTextActive: {
+    color: Colors.primaryAccent,
+    fontWeight: Typography.fontWeight.semibold,
   },
 });

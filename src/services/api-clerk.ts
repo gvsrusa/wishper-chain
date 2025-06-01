@@ -278,15 +278,29 @@ export const api = {
     // Transform text using AI (placeholder)
     const transformedText = await transformText(originalText);
 
-    const { data, error } = await supabase
+    // First insert the whisper
+    const { data: insertData, error: insertError } = await supabase
       .from('whispers')
       .insert({
         user_id: userId,
         original_text: originalText,
         transformed_text: transformedText,
         theme_id: themeId,
-      })
+      });
+
+    if (insertError) {
+      console.error('Error creating whisper:', insertError);
+      throw insertError;
+    }
+
+    // Then fetch the created whisper
+    const { data, error } = await supabase
+      .from('whispers')
       .select('*')
+      .eq('user_id', userId)
+      .eq('original_text', originalText)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .single();
 
     if (error) {

@@ -51,8 +51,7 @@ export default function WriteScreen() {
       
       await api.createWhisper(
         whisperText.trim(),
-        themeToUse || 'Abstract',
-        user.id
+        themeToUse || 'Abstract'
       );
       
       Alert.alert(
@@ -63,6 +62,7 @@ export default function WriteScreen() {
           setSelectedTheme(null);
           setCustomTheme('');
           setShowCustomTheme(false);
+          navigation.navigate('Main', { screen: 'Home' });
         }}]
       );
     } catch (error) {
