@@ -11,9 +11,35 @@ export class ClerkSupabaseAuth {
    */
   static async syncUser(clerkUser: UserResource): Promise<User> {
     try {
+      // First, try to use the upsert function if it exists
+      const { data: functionResult, error: functionError } = await supabase
+        .rpc('upsert_user_from_clerk', {
+          p_clerk_user_id: clerkUser.id,
+          p_email: clerkUser.primaryEmailAddress?.emailAddress || null,
+          p_username: clerkUser.username || null,
+          p_first_name: clerkUser.firstName || null,
+          p_last_name: clerkUser.lastName || null,
+          p_display_name: clerkUser.fullName || clerkUser.firstName || clerkUser.username || 'Anonymous',
+          p_avatar_url: clerkUser.imageUrl || null,
+        });
+
+      if (!functionError && functionResult) {
+        return {
+          id: functionResult.id,
+          email: functionResult.email,
+          username: functionResult.username,
+          displayName: functionResult.display_name,
+          avatarUrl: functionResult.avatar_url,
+          isAnonymous: functionResult.is_anonymous,
+          createdAt: new Date(functionResult.created_at),
+        };
+      }
+
+      // Fallback to direct table operations if function doesn't exist
+      console.log('Using fallback sync method');
+      
       // Prepare user data
       const userData = {
-        id: clerkUser.id, // Use Clerk ID as primary key
         clerk_user_id: clerkUser.id,
         email: clerkUser.primaryEmailAddress?.emailAddress || null,
         username: clerkUser.username || clerkUser.primaryEmailAddress?.emailAddress?.split('@')[0] || `user_${clerkUser.id.slice(-6)}`,
@@ -21,36 +47,54 @@ export class ClerkSupabaseAuth {
         first_name: clerkUser.firstName || null,
         last_name: clerkUser.lastName || null,
         avatar_url: clerkUser.imageUrl || null,
-        is_anonymous: false, // Clerk users are not anonymous
+        is_anonymous: false,
         last_seen: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
 
-      // Check if user exists
-      const { data: existingUser, error: fetchError } = await supabase
+      // Check if user exists by clerk_user_id
+      const { data: existingUsers, error: fetchError } = await supabase
         .from('users')
         .select('*')
-        .eq('id', clerkUser.id)
-        .single();
+        .eq('clerk_user_id', clerkUser.id);
 
       let user;
       
-      if (fetchError && fetchError.code === 'PGRST116') {
+      if (!existingUsers || existingUsers.length === 0) {
         // User doesn't exist, create new
+        // For new users, we need to handle the id field based on the schema
+        const insertData: any = {
+          ...userData,
+          id: clerkUser.id, // Try using Clerk ID as primary key
+        };
+
         const { data: newUser, error: insertError } = await supabase
           .from('users')
-          .insert(userData)
+          .insert(insertData)
           .select()
           .single();
 
         if (insertError) {
-          console.error('Error creating user:', insertError);
-          throw insertError;
+          // If insert fails with Clerk ID, try without specifying ID (let DB generate UUID)
+          delete insertData.id;
+          const { data: retryUser, error: retryError } = await supabase
+            .from('users')
+            .insert(insertData)
+            .select()
+            .single();
+          
+          if (retryError) {
+            console.error('Error creating user:', retryError);
+            throw retryError;
+          }
+          
+          user = retryUser;
+        } else {
+          user = newUser;
         }
-
-        user = newUser;
-      } else if (existingUser) {
+      } else {
         // User exists, update
+        user = existingUsers[0];
         const { data: updatedUser, error: updateError } = await supabase
           .from('users')
           .update({
@@ -63,23 +107,22 @@ export class ClerkSupabaseAuth {
             last_seen: userData.last_seen,
             updated_at: userData.updated_at,
           })
-          .eq('id', clerkUser.id)
+          .eq('clerk_user_id', clerkUser.id)
           .select()
           .single();
 
         if (updateError) {
           console.error('Error updating user:', updateError);
-          throw updateError;
+          // Use existing user data if update fails
+        } else {
+          user = updatedUser;
         }
-
-        user = updatedUser;
-      } else {
-        throw new Error('Unexpected error fetching user');
       }
 
       // Return formatted user
+      console.log('Synced user from database:', user);
       return {
-        id: user.id,
+        id: user.id,  // This should be the database UUID, not Clerk ID
         email: user.email,
         username: user.username,
         displayName: user.display_name,

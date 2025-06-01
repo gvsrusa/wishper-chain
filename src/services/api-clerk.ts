@@ -12,7 +12,9 @@ export const setAuthContext = (authGetter: () => string | null) => {
 
 const getCurrentUserId = (): string | null => {
   if (getCurrentUserFromContext) {
-    return getCurrentUserFromContext();
+    const userId = getCurrentUserFromContext();
+    console.log('getCurrentUserId returning:', userId);
+    return userId;
   }
   console.warn('Auth context not set. Call setAuthContext in your app initialization.');
   return null;
@@ -61,6 +63,7 @@ export const api = {
   // Whispers
   getWhispers: async (sortBy: string = 'trending'): Promise<Whisper[]> => {
     const currentUserId = getCurrentUserId();
+    console.log('getWhispers - currentUserId:', currentUserId);
     
     let query = supabase
       .from('whispers')
@@ -104,6 +107,9 @@ export const api = {
       const themeMap = new Map(themesResult?.data?.map(t => [t.id, t]) || []);
       const userMap = new Map(usersResult?.data?.map(u => [u.id, u]) || []);
       const likedWhisperIds = new Set(likesResult?.data?.map(l => l.whisper_id) || []);
+      
+      console.log('Likes found for user:', likesResult?.data);
+      console.log('Liked whisper IDs:', Array.from(likedWhisperIds));
 
       return data.map(w => {
         const theme = themeMap.get(w.theme_id);
@@ -211,44 +217,62 @@ export const api = {
 
   toggleLike: async (whisperId: string, providedUserId?: string): Promise<boolean> => {
     const userId = providedUserId || getCurrentUserId();
+    console.log('toggleLike called - whisperId:', whisperId, 'userId:', userId);
+    
     if (!userId) {
       throw new Error('User must be authenticated to like whispers');
     }
 
-    // Check if already liked
-    const { data: existingLike } = await supabase
+    // Check if already liked - just use regular select without single()
+    const { data: existingLikes, error: checkError } = await supabase
       .from('likes')
       .select('id')
       .eq('whisper_id', whisperId)
       .eq('user_id', userId)
-      .single();
+      .limit(1);
+
+    console.log('Existing likes check:', existingLikes, 'Error:', checkError);
+
+    if (checkError) {
+      console.error('Error checking like status:', checkError);
+      throw checkError;
+    }
+
+    const existingLike = existingLikes && existingLikes.length > 0 ? existingLikes[0] : null;
+    console.log('Existing like found:', existingLike);
 
     if (existingLike) {
       // Unlike
+      console.log('Attempting to unlike...');
       const { error } = await supabase
         .from('likes')
-        .delete()
         .eq('whisper_id', whisperId)
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .delete();
 
       if (error) {
         console.error('Error unliking:', error);
         throw error;
       }
+      console.log('Successfully unliked');
       return false; // Now unliked
     } else {
       // Like
-      const { error } = await supabase
+      console.log('Attempting to like...');
+      const { data, error } = await supabase
         .from('likes')
         .insert({
           whisper_id: whisperId,
           user_id: userId,
         });
 
+      console.log('Like insert result:', data, 'Error:', error);
+
       if (error) {
         console.error('Error liking:', error);
         throw error;
       }
+      console.log('Successfully liked');
       return true; // Now liked
     }
   },

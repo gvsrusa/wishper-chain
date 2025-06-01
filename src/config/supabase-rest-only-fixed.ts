@@ -24,6 +24,47 @@ class RestOnlySupabaseClient {
   from(table: string) {
     return new RestOnlyQueryBuilder(this.baseUrl, this.headers, table);
   }
+
+  async rpc(functionName: string, params: any = {}) {
+    const url = `${this.baseUrl.replace('/rest/v1', '')}/rest/v1/rpc/${functionName}`;
+    
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify(params),
+      });
+
+      if (!response.ok) {
+        let errorBody: any;
+        try {
+          errorBody = await response.json();
+        } catch {
+          errorBody = await response.text();
+        }
+        
+        return {
+          data: null,
+          error: {
+            message: errorBody.message || `HTTP error! status: ${response.status}`,
+            status: response.status,
+            details: errorBody,
+          },
+        };
+      }
+
+      const data = await response.json();
+      return { data, error: null };
+    } catch (error) {
+      return {
+        data: null,
+        error: {
+          message: error instanceof Error ? error.message : 'Unknown error',
+          status: 0,
+        },
+      };
+    }
+  }
 }
 
 class RestOnlyQueryBuilder {
@@ -35,6 +76,8 @@ class RestOnlyQueryBuilder {
   private orderByClause: string = '';
   private limitValue: number | null = null;
   private isSingle: boolean = false;
+  private isMaybeSingle: boolean = false;
+  private _method: string = 'GET';
 
   constructor(baseUrl: string, headers: Record<string, string>, table: string) {
     this.baseUrl = baseUrl;
@@ -123,6 +166,15 @@ class RestOnlyQueryBuilder {
 
   single() {
     this.isSingle = true;
+    this.isMaybeSingle = false;
+    this.limitValue = 1;
+    return this;
+  }
+
+  maybeSingle() {
+    // Like single() but doesn't throw error if no rows found
+    this.isSingle = true;
+    this.isMaybeSingle = true;
     this.limitValue = 1;
     return this;
   }
@@ -146,13 +198,18 @@ class RestOnlyQueryBuilder {
   }
 
   async execute(): Promise<{ data: any; error: any }> {
+    // Handle DELETE method
+    if (this._method === 'DELETE') {
+      return this.executeDelete();
+    }
+    
     const url = this.buildUrl();
     
     console.log('Fetching from URL:', url);
     
     try {
       const headers = { ...this.headers };
-      if (this.isSingle) {
+      if (this.isSingle && !this.isMaybeSingle) {
         headers['Accept'] = 'application/vnd.pgrst.object+json';
       }
 
@@ -300,8 +357,17 @@ class RestOnlyQueryBuilder {
     }
   }
 
-  async delete() {
+  delete() {
+    // Set the method to DELETE for later execution
+    this._method = 'DELETE';
+    // Return this to allow chaining
+    return this;
+  }
+
+  private async executeDelete() {
     const url = this.buildUrl();
+    
+    console.log('DELETE request to URL:', url);
     
     try {
       const response = await fetch(url, {

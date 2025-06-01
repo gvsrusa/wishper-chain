@@ -2,6 +2,7 @@
 import type { UserResource } from '@clerk/types';
 import { User } from '../types';
 import { ClerkSupabaseAuth } from './clerk-supabase-auth';
+import { supabase } from '../config/supabase-rest-only-fixed';
 
 export class ClerkDatabaseSync {
   /**

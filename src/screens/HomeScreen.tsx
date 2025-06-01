@@ -12,11 +12,13 @@ import GuessTheWhispererModal from '../components/GuessTheWhispererModal';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { addWordBreaks } from '../utils/textUtils';
+import { useAuthenticatedApi } from '../hooks/useAuthenticatedApi';
 
 
 export default function HomeScreen() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const { user } = useAuth();
+  useAuthenticatedApi(); // Set up auth context for API calls
   const [whispers, setWhispers] = useState<Whisper[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -26,8 +28,11 @@ export default function HomeScreen() {
 
   // Load whispers on component mount
   useEffect(() => {
-    loadWhispers();
-  }, [sortBy]);
+    // Only load whispers when we have a user (auth is ready)
+    if (user) {
+      loadWhispers();
+    }
+  }, [sortBy, user]);
 
   const loadWhispers = async () => {
     try {
@@ -51,22 +56,35 @@ export default function HomeScreen() {
     }
     
     try {
-      const isLiked = await api.toggleLike(whisperId);
+      // Find current whisper state
+      const currentWhisper = whispers.find(w => w.id === whisperId);
+      console.log('Current whisper before toggle:', currentWhisper);
+      console.log('User object:', user);
+      console.log('User ID being used:', user.id);
+      
+      const isLiked = await api.toggleLike(whisperId, user.id);
+      console.log('Toggle result - isLiked:', isLiked);
+      
       // Optimistically update UI
       setWhispers(prevWhispers =>
-        prevWhispers.map(whisper =>
-          whisper.id === whisperId
-            ? {
-                ...whisper,
-                isLiked: isLiked,
-                likes: isLiked ? whisper.likes + 1 : whisper.likes - 1,
-              }
-            : whisper
-        )
+        prevWhispers.map(whisper => {
+          if (whisper.id === whisperId) {
+            const newLikes = isLiked ? whisper.likes + 1 : Math.max(0, whisper.likes - 1);
+            console.log('Updating whisper - was liked:', whisper.isLiked, 'now liked:', isLiked);
+            console.log('Like count - was:', whisper.likes, 'now:', newLikes);
+            return {
+              ...whisper,
+              isLiked: isLiked,
+              likes: newLikes,
+            };
+          }
+          return whisper;
+        })
       );
     } catch (err) {
       console.error('Error liking whisper:', err);
-      // Could show toast notification here
+      // Revert optimistic update on error
+      setWhispers(prevWhispers => [...prevWhispers]);
     }
   };
 

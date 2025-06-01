@@ -67,16 +67,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         })
         .catch(error => {
           console.error('Failed to sync user:', error);
-          // Fallback to basic user data if sync fails
-          setSyncedUser({
-            id: clerkUser.id,
-            email: clerkUser.primaryEmailAddress?.emailAddress || '',
-            username: clerkUser.username || clerkUser.primaryEmailAddress?.emailAddress?.split('@')[0],
-            displayName: clerkUser.fullName || clerkUser.username || clerkUser.primaryEmailAddress?.emailAddress || 'Anonymous',
-            avatarUrl: clerkUser.imageUrl,
-            isAnonymous,
-            createdAt: clerkUser.createdAt ? new Date(clerkUser.createdAt) : new Date(),
-          });
+          // Don't set a fallback user if sync fails - this prevents using wrong IDs
+          setSyncedUser(null);
         })
         .finally(() => {
           setIsSyncing(false);

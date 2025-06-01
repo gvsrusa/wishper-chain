@@ -11,51 +11,126 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture Overview
 
-WhisperChain is a React Native Expo app that transforms personal thoughts into poetic expressions through AI. The app uses a dual-navigation structure:
+WhisperChain is a React Native Expo app that transforms personal thoughts into poetic expressions through AI. Users write raw thoughts that get transformed into artistic "whispers" which can then form collaborative chains as others respond.
+
+### Project Vision
+WhisperChain provides a safe, anonymous space for users to share thoughts, feelings, and dreams. The app's core value proposition is transforming raw personal expressions into poetic/artistic forms while fostering empathy and connection through collaborative "whisper chains". Key features include themed collections, gamification elements (achievements, "Guess the Whisperer"), and community insights. See `backup/docs/PRD.md` for complete product specifications.
+
+### Tech Stack
+- **Framework**: React Native with Expo SDK 53.0.0
+- **Language**: TypeScript
+- **Authentication**: Clerk (@clerk/clerk-expo)
+- **Database**: Supabase (PostgreSQL with RLS)
+- **Navigation**: React Navigation (Stack + Bottom Tabs)
+- **State Management**: React Context API
+- **Styling**: Custom theme system with expo-linear-gradient
 
 ### Navigation Structure
-- **RootNavigator** (Stack): Manages app-wide navigation flow from splash → auth → main app
-- **BottomTabNavigator**: Main app interface with 4 tabs (Home, Write, Themes, Profile)
+- **RootNavigator** (Stack): Manages app-wide navigation flow
+  - Handles Clerk auth state (SignedIn/SignedOut)
+  - Routes: Splash → Auth → Main App
+- **BottomTabNavigator**: Main app interface with 4 tabs
+  - Home: Browse whisper chains
+  - Write: Create new whispers
+  - Themes: Explore themed collections
+  - Profile: User settings and content
+
+### Authentication Architecture
+The app uses Clerk for authentication with custom Supabase integration:
+
+- **Clerk Setup**: Handles email/password, social OAuth (Google/Facebook), and email verification
+- **Anonymous Users**: Custom implementation using generated Clerk accounts
+- **Database Sync**: `clerk-database-sync.ts` syncs Clerk users to Supabase users table
+- **Token Management**: Secure token storage via expo-secure-store
+
+#### Clerk Configuration Requirements
+- Enable Email/Password authentication with email verification
+- Configure OAuth providers (Google, Facebook) with proper redirect URIs
+- Set up email verification using verification code strategy
+- Anonymous users created with generated email/password combinations
+- See `CLERK_SETUP.md` for detailed setup instructions
+
+### Database Architecture
+- **Configuration**: Supabase client in `src/config/supabase.ts` (auth disabled, uses Clerk tokens)
+- **Schema**: `database-schema-complete.sql` defines all tables, RLS policies, and triggers
+- **API Services**:
+  - `api-clerk.ts` - Production API with Clerk authentication
+  - `supabase-api.ts` - Direct Supabase integration
+  - `api-mock.ts` - Mock data for development
+  - `api-with-fallback.ts` - Graceful fallback to mock data
 
 ### Core Data Flow
-- User writes raw thoughts in WriteScreen
-- API service (`src/services/api.ts`) transforms text using mock AI (placeholder for OpenAI/Gemini)
-- Transformed "whispers" appear as poetic content in feeds
-- Users can create "chain responses" - continuing conversations on existing whispers
+1. User authentication via Clerk
+2. Database sync creates/updates Supabase user record
+3. User writes raw text in WriteScreen
+4. Text transformation (currently mock, placeholder for AI)
+5. Whisper creation with theme assignment
+6. Real-time updates for likes and chain responses
 
-### Key Features
-- Anonymous and registered user support
-- Theme-based categorization of whispers
-- Social interactions (likes, chains)
-- Dark purple theme with gradient UI
+### Environment Configuration
+Required environment variables (in `.env`):
+```
+EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+EXPO_PUBLIC_SUPABASE_URL=https://...
+EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+```
 
-### File Organization
-- `/src/screens/` - All screen components
-- `/src/navigation/` - Navigation setup
-- `/src/types/index.ts` - TypeScript definitions for User, Whisper, ChainResponse, Theme
-- `/src/constants/colors.ts` - App color palette
-- `/src/services/api.ts` - Mock API layer (currently returns hardcoded data)
+### Metro Configuration
+Custom Metro config handles Node.js polyfills and disables problematic modules:
+- WebSocket modules stubbed to avoid React Native issues
+- Buffer and crypto polyfills configured
+- Custom resolver for platform-specific modules
 
-### Database Integration
-The app is configured to use Supabase as the backend database:
+### Key Implementation Details
+- **Error Handling**: API services use try-catch with fallback to mock data
+- **Type Safety**: Comprehensive TypeScript types in `src/types/index.ts`
+- **Security**: Clerk handles auth, Supabase RLS policies control data access
+- **Performance**: Disabled Supabase realtime/websockets for stability
 
-- **Configuration**: `src/config/supabase.ts` - requires SUPABASE_URL and SUPABASE_ANON_KEY
-- **Schema**: `database-schema.sql` - complete database schema with tables, policies, and triggers
-- **API Layer**: `src/services/supabase-api.ts` - replaces mock API with real Supabase calls
-- **Mock Fallback**: `src/services/api.ts` - original mock implementation for development
+### Development Notes
+- No test framework currently configured
+- No linting setup (ESLint/Prettier)
+- Mock AI transformation needs replacement with actual service (OpenAI/Gemini)
+- Anonymous user credentials stored locally - users lose access if app data cleared
 
-### Setup Steps
-1. Create Supabase project at https://supabase.com
-2. Run `database-schema.sql` in Supabase SQL editor
-3. Copy `.env.example` to `.env` and add your Supabase credentials:
-   - `EXPO_PUBLIC_SUPABASE_URL=your_project_url`
-   - `EXPO_PUBLIC_SUPABASE_ANON_KEY=your_anon_key`
-4. Replace imports from `api.ts` to `supabase-api.ts` in components
+## Additional Resources
 
-### Environment Variables
-- **Configuration**: `src/config/environment.ts` - centralized environment variable management
-- **Validation**: Automatically validates required variables on app start
-- **Security**: `.env` file is gitignored to protect sensitive data
+### Documentation
+- **CLERK_SETUP.md**: Step-by-step Clerk authentication setup guide
+- **backup/docs/PRD.md**: Complete Product Requirements Document with feature specifications
 
-### AI Integration
-The `transformText` function in `supabase-api.ts` currently uses mock transformations and should be replaced with actual AI service (OpenAI, Gemini, etc.).
+### Database Scripts
+Located in root directory:
+- **Schema Management**:
+  - `database-schema-complete.sql` - Full database schema with tables, functions, and policies
+  - `database-migration-clerk.sql` - Migration script for Clerk integration
+- **RLS Policies**:
+  - `clerk-rls-policies.sql` - Clerk-specific RLS policies
+  - `production-rls-policies.sql` - Production environment policies
+  - `development-rls-policies.sql` - Development environment policies
+- **Testing & Data**:
+  - `insert-sample-data.sql`, `simple-data-insert.sql` - Sample data for testing
+  - `disable-rls-for-testing.sql` - Temporarily disable RLS for testing
+  - `diagnose-and-fix-users.sql` - User table diagnostics
+
+### App Configuration Details
+From `app.json`:
+- **URL Scheme**: `whisperchain://` for deep linking
+- **Default Theme**: Dark mode (`userInterfaceStyle: "dark"`)
+- **Splash Screen**: Purple background (#1A1033) matching app theme
+- **Expo Plugins**: `expo-secure-store`, `expo-web-browser`
+
+### TypeScript Configuration
+- Strict mode enabled for type safety
+- Extends Expo's base TypeScript configuration
+
+### Build & Bundle Configuration
+The `metro.config.js` implements critical workarounds:
+- **Polyfills**: crypto → react-native-crypto, buffer → @craftzdog/react-native-buffer
+- **Disabled Modules**: WebSocket and related modules stubbed to prevent React Native conflicts
+- **Module Resolution**: Configured for React Native, browser, and main fields
+
+### Troubleshooting Scripts
+- `test-android-bundle.js` - Android bundle testing
+- `android_test.js` - Android-specific tests
+- `websocket-disable.js`, `stub.js` - WebSocket workaround modules
