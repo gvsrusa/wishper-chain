@@ -6,10 +6,12 @@ import {
   Modal, 
   ScrollView, 
   StyleSheet,
-  Alert 
+  Alert,
+  Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography } from '../constants';
+import { Picker } from '@react-native-picker/picker';
 
 interface Props {
   visible: boolean;
@@ -21,7 +23,13 @@ const ageRanges = ['13-18', '19-25', '26-40', '41+'];
 const genders = ['Male', 'Female', 'Other'];
 const countries = [
   'United States', 'Canada', 'United Kingdom', 'Australia', 
-  'Germany', 'France', 'Japan', 'Brazil', 'India', 'Other'
+  'Germany', 'France', 'Spain', 'Italy', 'Netherlands', 'Belgium',
+  'Switzerland', 'Austria', 'Sweden', 'Norway', 'Denmark', 'Finland',
+  'Poland', 'Czech Republic', 'Japan', 'South Korea', 'China', 'India',
+  'Brazil', 'Mexico', 'Argentina', 'Chile', 'South Africa', 'Nigeria',
+  'Egypt', 'Israel', 'UAE', 'Saudi Arabia', 'Turkey', 'Russia',
+  'New Zealand', 'Singapore', 'Malaysia', 'Thailand', 'Philippines',
+  'Indonesia', 'Vietnam', 'Pakistan', 'Bangladesh', 'Other'
 ];
 
 export default function GuessTheWhispererModal({ visible, onClose, whisperId }: Props) {
@@ -29,6 +37,7 @@ export default function GuessTheWhispererModal({ visible, onClose, whisperId }: 
   const [selectedGender, setSelectedGender] = useState<string | null>(null);
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
   const [showStats, setShowStats] = useState(false);
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
 
   const handleSubmitGuess = () => {
     if (!selectedAge || !selectedCountry) {
@@ -52,7 +61,7 @@ export default function GuessTheWhispererModal({ visible, onClose, whisperId }: 
 
   if (showStats) {
     return (
-      <Modal visible={visible} transparent animationType="fade">
+      <Modal visible={visible} transparent animationType="fade" statusBarTranslucent>
         <View style={styles.overlay}>
           <View style={styles.modal}>
             <View style={styles.header}>
@@ -114,7 +123,7 @@ export default function GuessTheWhispererModal({ visible, onClose, whisperId }: 
   }
 
   return (
-    <Modal visible={visible} transparent animationType="fade">
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent>
       <View style={styles.overlay}>
         <View style={styles.modal}>
           <View style={styles.header}>
@@ -124,10 +133,9 @@ export default function GuessTheWhispererModal({ visible, onClose, whisperId }: 
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.content}>
+          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
             <Text style={styles.subtitle}>
-              Help us understand our community better! Your anonymous guesses contribute 
-              to valuable insights about our whisper patterns.
+              Help us understand our community better! Your anonymous guesses contribute to valuable insights about our whisper patterns.
             </Text>
 
             <View style={styles.section}>
@@ -155,27 +163,31 @@ export default function GuessTheWhispererModal({ visible, onClose, whisperId }: 
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Country</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.chipContainer}>
-                  {countries.map((country) => (
-                    <TouchableOpacity
-                      key={country}
-                      style={[
-                        styles.chip,
-                        selectedCountry === country && styles.selectedChip
-                      ]}
-                      onPress={() => setSelectedCountry(country)}
-                    >
-                      <Text style={[
-                        styles.chipText,
-                        selectedCountry === country && styles.selectedChipText
-                      ]}>
-                        {country}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+              {Platform.OS === 'ios' ? (
+                <TouchableOpacity 
+                  style={styles.pickerButton}
+                  onPress={() => setShowCountryPicker(true)}
+                >
+                  <Text style={styles.pickerButtonText}>
+                    {selectedCountry || 'Select a country'}
+                  </Text>
+                  <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={selectedCountry}
+                    onValueChange={(itemValue) => setSelectedCountry(itemValue)}
+                    style={styles.picker}
+                    dropdownIconColor={Colors.textSecondary}
+                  >
+                    <Picker.Item label="Select a country" value={null} />
+                    {countries.map((country) => (
+                      <Picker.Item key={country} label={country} value={country} />
+                    ))}
+                  </Picker>
                 </View>
-              </ScrollView>
+              )}
             </View>
 
             <View style={styles.section}>
@@ -219,6 +231,35 @@ export default function GuessTheWhispererModal({ visible, onClose, whisperId }: 
           </ScrollView>
         </View>
       </View>
+      
+      {/* iOS Country Picker Modal */}
+      {Platform.OS === 'ios' && (
+        <Modal visible={showCountryPicker} transparent animationType="slide">
+          <TouchableOpacity 
+            style={styles.pickerModalOverlay} 
+            activeOpacity={1}
+            onPress={() => setShowCountryPicker(false)}
+          >
+            <View style={styles.pickerModalContent}>
+              <View style={styles.pickerModalHeader}>
+                <TouchableOpacity onPress={() => setShowCountryPicker(false)}>
+                  <Text style={styles.pickerModalDone}>Done</Text>
+                </TouchableOpacity>
+              </View>
+              <Picker
+                selectedValue={selectedCountry}
+                onValueChange={(itemValue) => setSelectedCountry(itemValue)}
+                style={styles.iosPicker}
+              >
+                <Picker.Item label="Select a country" value={null} />
+                {countries.map((country) => (
+                  <Picker.Item key={country} label={country} value={country} />
+                ))}
+              </Picker>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      )}
     </Modal>
   );
 }
@@ -226,9 +267,15 @@ export default function GuessTheWhispererModal({ visible, onClose, whisperId }: 
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
     justifyContent: 'center',
     alignItems: 'center',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
   },
   modal: {
     backgroundColor: Colors.modalBackground,
@@ -236,6 +283,14 @@ const styles = StyleSheet.create({
     width: '90%',
     maxHeight: '80%',
     maxWidth: 400,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
   header: {
     flexDirection: 'row',
@@ -256,8 +311,9 @@ const styles = StyleSheet.create({
   subtitle: {
     color: Colors.textSecondary,
     fontSize: Typography.fontSize.sm,
-    lineHeight: Typography.lineHeight.normal,
+    lineHeight: Typography.lineHeight.normal * Typography.fontSize.sm,
     marginBottom: 24,
+    paddingTop: 4,
   },
   section: {
     marginBottom: 24,
@@ -363,5 +419,51 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
     marginTop: 16,
+  },
+  pickerButton: {
+    backgroundColor: Colors.cardBackground,
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  pickerButtonText: {
+    color: Colors.textPrimary,
+    fontSize: Typography.fontSize.base,
+  },
+  pickerContainer: {
+    backgroundColor: Colors.cardBackground,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  picker: {
+    color: Colors.textPrimary,
+    backgroundColor: Colors.cardBackground,
+  },
+  pickerModalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  pickerModalContent: {
+    backgroundColor: Colors.cardBackground,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  pickerModalHeader: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.modalBackground,
+    alignItems: 'flex-end',
+  },
+  pickerModalDone: {
+    color: Colors.primaryAccent,
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.semibold,
+  },
+  iosPicker: {
+    backgroundColor: Colors.cardBackground,
+    height: 200,
   },
 });
