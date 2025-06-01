@@ -204,12 +204,12 @@ export const api = {
         .from('whispers')
         .select('*')
         .eq('id', id)
+        .eq('is_published', true)
         .single();
 
       console.log('Whisper query result:');
       console.log('- Data:', data);
       console.log('- Error:', error);
-      console.log('- URL would be:', `${supabase.from('whispers').baseUrl}/whispers?select=*&id=eq.${id}`);
 
       if (error) {
         console.error('Error fetching whisper:', error);
@@ -228,33 +228,44 @@ export const api = {
         return null;
       }
 
-    if (data) {
-      // Fetch related data
+      // Fetch related data with error handling for each
       const [themeResult, userResult, likeResult] = await Promise.all([
-        data.theme_id ? supabase.from('themes').select('id, name, color').eq('id', data.theme_id).single() : null,
+        data.theme_id 
+          ? supabase.from('themes').select('id, name, color').eq('id', data.theme_id).single()
+          : Promise.resolve({ data: null, error: null }),
         supabase.from('users').select('id, username, display_name').eq('id', data.user_id).single(),
-        currentUserId ? supabase.from('likes').select('id').eq('whisper_id', id).eq('user_id', currentUserId).single() : null
+        currentUserId 
+          ? supabase.from('likes').select('id').eq('whisper_id', id).eq('user_id', currentUserId).maybeSingle()
+          : Promise.resolve({ data: null, error: null })
       ]);
+
+      // Log any errors but don't fail the whole request
+      if (themeResult?.error) {
+        console.warn('Error fetching theme:', themeResult.error);
+      }
+      if (userResult?.error) {
+        console.warn('Error fetching user:', userResult.error);
+      }
+      if (likeResult?.error) {
+        console.warn('Error fetching like status:', likeResult.error);
+      }
 
       const themeData = themeResult?.data as { id: string; name: string; color: string } | null;
       const userData = userResult?.data as { id: string; username: string; display_name: string } | null;
 
       return transformWhisper({
         ...data,
-        theme_name: themeData?.name,
+        theme_name: themeData?.name || 'Unknown',
         themes: themeData,
-        username: userData?.username,
-        display_name: userData?.display_name,
+        username: userData?.username || 'anonymous',
+        display_name: userData?.display_name || 'Anonymous',
         users: userData,
         is_liked: !!likeResult?.data,
       });
-    }
     } catch (error) {
       console.error('Unexpected error in getWhisperById:', error);
       return null;
     }
-
-    return null;
   },
 
   createWhisper: async (originalText: string, theme?: string): Promise<Whisper> => {
@@ -724,7 +735,6 @@ export const api = {
     }
 
     // Then get whispers for that theme
-    const currentUserId = getCurrentUserId();
     const { data, error } = await supabase
       .from('whispers')
       .select('*')

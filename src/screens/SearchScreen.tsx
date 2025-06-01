@@ -10,43 +10,101 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { RouteProp } from '@react-navigation/native';
 import { Colors, Typography } from '../constants';
-import { RootStackParamList, Whisper } from '../types';
+import { RootStackParamList, Whisper, Theme } from '../types';
 import { api } from '../services/api';
 
 type SearchScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Search'>;
+type SearchScreenRouteProp = RouteProp<RootStackParamList, 'Search'>;
 
 interface Props {
   navigation: SearchScreenNavigationProp;
+  route: SearchScreenRouteProp;
 }
 
-export default function SearchScreen({ navigation }: Props) {
-  const [query, setQuery] = useState('');
+export default function SearchScreen({ navigation, route }: Props) {
+  const { initialQuery = '', filterTheme = null } = route.params || {};
+  const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<Whisper[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [selectedTheme, setSelectedTheme] = useState<string | null>(filterTheme);
+  const [themes, setThemes] = useState<Theme[]>([]);
 
   useEffect(() => {
-    if (query.length > 2) {
+    // Load themes on mount
+    loadThemes();
+    
+    // If we have a filterTheme, load whispers for that theme immediately
+    if (filterTheme) {
+      loadThemeWhispers();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (query.length > 2 || selectedTheme) {
       const timeoutId = setTimeout(() => {
         performSearch();
       }, 500);
 
       return () => clearTimeout(timeoutId);
-    } else {
+    } else if (!selectedTheme) {
       setResults([]);
       setHasSearched(false);
     }
-  }, [query]);
+  }, [query, selectedTheme]);
 
-  const performSearch = async () => {
-    if (query.trim().length < 3) return;
+  const loadThemes = async () => {
+    try {
+      const allThemes = await api.getThemes();
+      setThemes(allThemes);
+    } catch (error) {
+      console.error('Error loading themes:', error);
+    }
+  };
+
+  const loadThemeWhispers = async () => {
+    if (!selectedTheme) return;
 
     setIsLoading(true);
     setHasSearched(true);
 
     try {
-      const searchResults = await api.searchWhispers(query);
+      const themeWhispers = await api.getWhispersByTheme(selectedTheme);
+      setResults(themeWhispers);
+    } catch (error) {
+      console.error('Error loading theme whispers:', error);
+      setResults([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const performSearch = async () => {
+    if (query.trim().length < 3 && !selectedTheme) return;
+
+    setIsLoading(true);
+    setHasSearched(true);
+
+    try {
+      let searchResults: Whisper[] = [];
+      
+      if (selectedTheme && query.trim().length > 0) {
+        // Search within theme
+        const themeWhispers = await api.getWhispersByTheme(selectedTheme);
+        searchResults = themeWhispers.filter(whisper => 
+          whisper.originalText.toLowerCase().includes(query.toLowerCase()) ||
+          whisper.transformedText.toLowerCase().includes(query.toLowerCase())
+        );
+      } else if (selectedTheme) {
+        // Just get all whispers for the theme
+        searchResults = await api.getWhispersByTheme(selectedTheme);
+      } else {
+        // Regular search across all whispers
+        searchResults = await api.searchWhispers(query);
+      }
+      
       setResults(searchResults);
     } catch (error) {
       console.error('Search error:', error);
@@ -54,6 +112,11 @@ export default function SearchScreen({ navigation }: Props) {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleThemeSelect = (theme: string | null) => {
+    setSelectedTheme(theme);
+    setQuery(''); // Clear query when switching themes
   };
 
   const handleWhisperPress = (whisperId: string) => {
@@ -89,11 +152,11 @@ export default function SearchScreen({ navigation }: Props) {
           <Ionicons name="search" size={20} color={Colors.textSecondary} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search whispers..."
+            placeholder={selectedTheme ? `Search in ${selectedTheme}...` : "Search whispers..."}
             placeholderTextColor={Colors.textSecondary}
             value={query}
             onChangeText={setQuery}
-            autoFocus
+            autoFocus={!selectedTheme}
           />
           {query.length > 0 && (
             <TouchableOpacity onPress={() => setQuery('')}>
@@ -102,6 +165,44 @@ export default function SearchScreen({ navigation }: Props) {
           )}
         </View>
       </View>
+
+      {/* Theme filter chips */}
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false} 
+        style={styles.themeFilters}
+        contentContainerStyle={styles.themeFiltersContent}
+      >
+        <TouchableOpacity
+          style={[
+            styles.themeChip,
+            !selectedTheme && styles.themeChipActive
+          ]}
+          onPress={() => handleThemeSelect(null)}
+        >
+          <Text style={[
+            styles.themeChipText,
+            !selectedTheme && styles.themeChipTextActive
+          ]}>All</Text>
+        </TouchableOpacity>
+        
+        {themes.map((theme) => (
+          <TouchableOpacity
+            key={theme.id}
+            style={[
+              styles.themeChip,
+              selectedTheme === theme.name && styles.themeChipActive,
+              { borderColor: theme.accentColor }
+            ]}
+            onPress={() => handleThemeSelect(theme.name)}
+          >
+            <Text style={[
+              styles.themeChipText,
+              selectedTheme === theme.name && styles.themeChipTextActive
+            ]}>{theme.name}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
 
       <ScrollView style={styles.content}>
         {isLoading && (
@@ -116,17 +217,19 @@ export default function SearchScreen({ navigation }: Props) {
             <Ionicons name="search" size={64} color={Colors.textSecondary} />
             <Text style={styles.emptyTitle}>No whispers found</Text>
             <Text style={styles.emptySubtitle}>
-              Try different keywords or browse themes to discover whispers
+              {selectedTheme 
+                ? `No whispers found in ${selectedTheme}. Try searching in all themes.`
+                : 'Try different keywords or browse themes to discover whispers'}
             </Text>
           </View>
         )}
 
-        {!isLoading && !hasSearched && query.length === 0 && (
+        {!isLoading && !hasSearched && query.length === 0 && !selectedTheme && (
           <View style={styles.emptyContainer}>
             <Ionicons name="search" size={64} color={Colors.textSecondary} />
             <Text style={styles.emptyTitle}>Search Whispers</Text>
             <Text style={styles.emptySubtitle}>
-              Find whispers by searching their content or themes
+              Find whispers by searching their content or selecting a theme above
             </Text>
           </View>
         )}
@@ -134,7 +237,9 @@ export default function SearchScreen({ navigation }: Props) {
         {results.length > 0 && (
           <View style={styles.resultsContainer}>
             <Text style={styles.resultsHeader}>
-              {results.length} whisper{results.length !== 1 ? 's' : ''} found
+              {results.length} whisper{results.length !== 1 ? 's' : ''} 
+              {selectedTheme ? ` in ${selectedTheme}` : ' found'}
+              {query && selectedTheme ? ` matching "${query}"` : ''}
             </Text>
             
             {results.map((whisper) => (
@@ -308,5 +413,37 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: Typography.fontSize.xs,
     marginLeft: 4,
+  },
+  themeFilters: {
+    maxHeight: 50,
+    marginBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.cardBackground,
+  },
+  themeFiltersContent: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  themeChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.cardBackground,
+    backgroundColor: Colors.cardBackground,
+    marginRight: 8,
+  },
+  themeChipActive: {
+    backgroundColor: Colors.primaryAccent,
+    borderColor: Colors.primaryAccent,
+  },
+  themeChipText: {
+    color: Colors.textSecondary,
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.medium,
+  },
+  themeChipTextActive: {
+    color: Colors.textPrimary,
   },
 });

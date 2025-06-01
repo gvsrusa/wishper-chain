@@ -267,7 +267,15 @@ export default function WhisperChainScreen({ navigation, route }: Props) {
   if (!whisper) {
     return (
       <View style={[styles.container, styles.centerContent]}>
-        <Text style={styles.errorText}>Whisper not found</Text>
+        <Ionicons name="warning-outline" size={64} color={Colors.error} />
+        <Text style={styles.errorTitle}>Something went wrong</Text>
+        <Text style={styles.errorText}>This whisper may have been removed or is no longer available.</Text>
+        <TouchableOpacity 
+          style={styles.errorButton} 
+          onPress={() => navigation.goBack()}
+        >
+          <Text style={styles.errorButtonText}>Go Back</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -497,8 +505,29 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.base,
     marginTop: 16,
   },
+  errorTitle: {
+    color: Colors.textPrimary,
+    fontSize: Typography.fontSize.xl,
+    fontWeight: Typography.fontWeight.bold,
+    marginTop: 16,
+    marginBottom: 8,
+  },
   errorText: {
     color: Colors.textSecondary,
     fontSize: Typography.fontSize.base,
+    textAlign: 'center',
+    marginHorizontal: 32,
+    marginBottom: 24,
+  },
+  errorButton: {
+    backgroundColor: Colors.primaryAccent,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 24,
+  },
+  errorButtonText: {
+    color: Colors.textPrimary,
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.medium,
   },
 });

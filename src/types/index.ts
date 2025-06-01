@@ -63,5 +63,5 @@ export type RootStackParamList = {
   Main: undefined;
   WhisperChain: { whisperId: string };
   Settings: undefined;
-  Search: undefined;
+  Search: { initialQuery?: string; filterTheme?: string } | undefined;
 };
