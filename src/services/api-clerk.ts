@@ -1,7 +1,6 @@
 // API service that integrates with Clerk authentication
 import { supabase } from '../config/supabase-rest-only-fixed';
 import { Whisper, ChainResponse, User, Theme } from '../types';
-import { useAuth } from '@clerk/clerk-expo';
 
 // Get the current user from Clerk context
 let currentUserId: string | null = null;
@@ -73,7 +72,7 @@ interface DbLike {
 }
 
 // Transform database response to app types
-const transformWhisper = (dbWhisper: DbWhisper, currentUserId?: string | null): Whisper => ({
+const transformWhisper = (dbWhisper: DbWhisper): Whisper => ({
   id: dbWhisper.id,
   userId: dbWhisper.user_id,
   originalText: dbWhisper.original_text,
@@ -112,11 +111,11 @@ const transformChainResponse = (dbResponse: DbChainResponse): ChainResponse => {
 
 export const api = {
   // Authentication - handled by Clerk, these are just for compatibility
-  signUp: async (email: string, password: string, username?: string): Promise<User> => {
+  signUp: async (): Promise<User> => {
     throw new Error('Use Clerk authentication directly');
   },
 
-  signIn: async (email: string, password: string): Promise<User> => {
+  signIn: async (): Promise<User> => {
     throw new Error('Use Clerk authentication directly');
   },
 
@@ -187,7 +186,7 @@ export const api = {
           display_name: user?.display_name,
           users: user,
           is_liked: likedWhisperIds.has(w.id),
-        }, currentUserId);
+        });
       });
     }
 
@@ -248,7 +247,7 @@ export const api = {
         display_name: userData?.display_name,
         users: userData,
         is_liked: !!likeResult?.data,
-      }, currentUserId);
+      });
     }
     } catch (error) {
       console.error('Unexpected error in getWhisperById:', error);
@@ -279,7 +278,7 @@ export const api = {
     const transformedText = await transformText(originalText);
 
     // First insert the whisper
-    const { data: insertData, error: insertError } = await supabase
+    const { error: insertError } = await supabase
       .from('whispers')
       .insert({
         user_id: userId,
@@ -491,7 +490,7 @@ export const api = {
       const transformedText = await transformText(originalText);
 
       // Generate a temporary ID for optimistic UI update
-      const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 
       // Insert with returning data
       const { data: insertData, error: insertError } = await supabase
@@ -627,7 +626,7 @@ export const api = {
           display_name: user?.display_name,
           users: user,
           is_liked: likedWhisperIds.has(w.id),
-        }, currentUserId);
+        });
       });
     }
 
@@ -674,7 +673,7 @@ export const api = {
 
         // Get counts individually
         const themesWithCounts = await Promise.all(
-          themes.map(async (theme) => {
+          themes.map(async (theme: DbTheme) => {
             const { data: whispers } = await supabase
               .from('whispers')
               .select('id')
@@ -743,23 +742,23 @@ export const api = {
     }
 
     // Get user data for the whispers
-    const userIds = [...new Set(data.map(w => w.user_id).filter(Boolean))];
+    const userIds = [...new Set(data.map((w: DbWhisper) => w.user_id).filter(Boolean))];
     const { data: users } = await supabase
       .from('users')
       .select('id, username, display_name')
       .in('id', userIds);
 
-    const userMap = new Map(users?.map(u => [u.id, u]) || []);
+    const userMap = new Map(users?.map((u: DbUser) => [u.id, u]) || []);
 
-    return data.map(w => {
-      const user = userMap.get(w.user_id);
+    return data.map((w: DbWhisper) => {
+      const user = userMap.get(w.user_id) as DbUser | undefined;
       return transformWhisper({
         ...w,
         theme_name: themeName,
         username: user?.username,
         display_name: user?.display_name,
         users: user,
-      }, currentUserId);
+      });
     });
   },
 };
