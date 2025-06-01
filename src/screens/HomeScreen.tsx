@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../types';
 
@@ -26,19 +26,20 @@ export default function HomeScreen() {
   const [guessModalVisible, setGuessModalVisible] = useState(false);
   const [selectedWhisperId, setSelectedWhisperId] = useState<string>('');
 
-  // Load whispers on component mount
-  useEffect(() => {
-    // Only load whispers when we have a user (auth is ready)
-    if (user) {
-      loadWhispers();
-    }
-  }, [sortBy, user]);
+  // Load whispers on component mount and when HomeScreen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      if (user) {
+        loadWhispers();
+      }
+    }, [sortBy, user])
+  );
 
   const loadWhispers = async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await api.getWhispers(sortBy.toLowerCase(), user?.id);
+      const data = await api.getWhispers(sortBy.toLowerCase());
       setWhispers(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load whispers');

@@ -200,7 +200,7 @@ export default function WhisperChainScreen({ navigation, route }: Props) {
       
       setNewResponse('');
       
-      // Update whisper chain count
+      // Update whisper chain count locally
       if (whisper) {
         setWhisper({ ...whisper, chainCount: whisper.chainCount + 1 });
       }
