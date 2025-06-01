@@ -12,6 +12,8 @@ import AuthScreen from '../screens/AuthScreen';
 import WhisperChainScreen from '../screens/WhisperChainScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import SearchScreen from '../screens/SearchScreen';
+import MyWhispersScreen from '../screens/MyWhispersScreen';
+import MyChainsScreen from '../screens/MyChainsScreen';
 import { AuthProvider } from '../context/AuthContext';
 import { AuthenticatedApp } from '../components/AuthenticatedApp';
 
@@ -54,6 +56,16 @@ function MainStack() {
             name="Search" 
             component={SearchScreen} 
             options={{ title: 'Search Whispers' }}
+          />
+          <Stack.Screen 
+            name="MyWhispers" 
+            component={MyWhispersScreen} 
+            options={{ title: 'My Whispers' }}
+          />
+          <Stack.Screen 
+            name="MyChains" 
+            component={MyChainsScreen} 
+            options={{ title: 'My Chains' }}
           />
         </Stack.Navigator>
       </AuthenticatedApp>

@@ -1,19 +1,48 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
 import { Colors, Typography } from '../constants';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../services/api';
+import { RootStackParamList } from '../types';
 
-const achievements = [
-  { name: 'First Whisper', icon: 'pencil', isEarned: true },
-  { name: '10 Whispers Shared', icon: 'chatbubbles', isEarned: true },
-  { name: 'Thread Starter', icon: 'link', isEarned: false },
-  { name: 'Community Helper', icon: 'people', isEarned: false },
-  { name: 'Guessed Right 5 Times', icon: 'checkmark-circle', isEarned: false },
-];
+type ProfileScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Profile'>;
 
 export default function ProfileScreen() {
   const { signOut, user } = useAuth();
+  const navigation = useNavigation<ProfileScreenNavigationProp>();
+  const [isLoading, setIsLoading] = useState(true);
+  const [stats, setStats] = useState({
+    whispersCount: 0,
+    chainsStarted: 0,
+    achievementsCount: 0,
+  });
+
+  const achievements = [
+    { name: 'First Whisper', icon: 'pencil', isEarned: stats.whispersCount >= 1 },
+    { name: '10 Whispers Shared', icon: 'chatbubbles', isEarned: stats.whispersCount >= 10 },
+    { name: 'Thread Starter', icon: 'link', isEarned: stats.chainsStarted >= 1 },
+    { name: 'Community Helper', icon: 'people', isEarned: stats.chainsStarted >= 5 },
+    { name: 'Guessed Right 5 Times', icon: 'checkmark-circle', isEarned: false },
+  ];
+
+  useEffect(() => {
+    fetchUserStats();
+  }, []);
+
+  const fetchUserStats = async () => {
+    try {
+      setIsLoading(true);
+      const userStats = await api.getUserStats();
+      setStats(userStats);
+    } catch (error) {
+      console.error('Error fetching user stats:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleSignOut = async () => {
     Alert.alert(
@@ -49,20 +78,26 @@ export default function ProfileScreen() {
         <Text style={styles.status}>{user?.email || 'Anonymous Whisperer'}</Text>
       </View>
       
-      <View style={styles.statsSection}>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>7</Text>
-          <Text style={styles.statLabel}>Whispers Shared</Text>
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primaryAccent} />
         </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>3</Text>
-          <Text style={styles.statLabel}>Chains Started</Text>
+      ) : (
+        <View style={styles.statsSection}>
+          <View style={styles.statCard}>
+            <Text style={styles.statNumber}>{stats.whispersCount}</Text>
+            <Text style={styles.statLabel}>Whispers Shared</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statNumber}>{stats.chainsStarted}</Text>
+            <Text style={styles.statLabel}>Chains Started</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statNumber}>{stats.achievementsCount}</Text>
+            <Text style={styles.statLabel}>Achievements</Text>
+          </View>
         </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>2</Text>
-          <Text style={styles.statLabel}>Achievements</Text>
-        </View>
-      </View>
+      )}
       
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Achievements</Text>
@@ -92,19 +127,28 @@ export default function ProfileScreen() {
       </View>
       
       <View style={styles.section}>
-        <TouchableOpacity style={styles.menuItem}>
+        <TouchableOpacity 
+          style={styles.menuItem}
+          onPress={() => navigation.navigate('MyWhispers')}
+        >
           <Ionicons name="document-text-outline" size={24} color={Colors.textSecondary} />
           <Text style={styles.menuText}>My Whispers</Text>
           <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
         
-        <TouchableOpacity style={styles.menuItem}>
+        <TouchableOpacity 
+          style={styles.menuItem}
+          onPress={() => navigation.navigate('MyChains')}
+        >
           <Ionicons name="link-outline" size={24} color={Colors.textSecondary} />
           <Text style={styles.menuText}>My Chains</Text>
           <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
         
-        <TouchableOpacity style={styles.menuItem}>
+        <TouchableOpacity 
+          style={styles.menuItem}
+          onPress={() => navigation.navigate('Settings')}
+        >
           <Ionicons name="settings-outline" size={24} color={Colors.textSecondary} />
           <Text style={styles.menuText}>Settings</Text>
           <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
@@ -232,5 +276,10 @@ const styles = StyleSheet.create({
   },
   signOutText: {
     color: Colors.error,
+  },
+  loadingContainer: {
+    height: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

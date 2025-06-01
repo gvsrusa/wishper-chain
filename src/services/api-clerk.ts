@@ -1053,6 +1053,189 @@ export const api = {
       });
     });
   },
+
+  // User Profile & Stats
+  getUserStats: async (userId?: string): Promise<{ whispersCount: number; chainsStarted: number; achievementsCount: number }> => {
+    const uid = userId || getCurrentUserId();
+    if (!uid) {
+      return { whispersCount: 0, chainsStarted: 0, achievementsCount: 0 };
+    }
+
+    try {
+      // Get whispers count
+      const { data: whispers } = await supabase
+        .from('whispers')
+        .select('id')
+        .eq('user_id', uid)
+        .eq('is_published', true);
+
+      // Get chains started (whispers with chain responses)
+      const { data: chainsData } = await supabase
+        .from('chain_responses')
+        .select('whisper_id')
+        .eq('user_id', uid);
+      
+      const uniqueChains = new Set(chainsData?.map(c => c.whisper_id) || []);
+
+      // Calculate achievements (based on actual data)
+      let achievementsCount = 0;
+      const whispersCount = whispers?.length || 0;
+      
+      if (whispersCount >= 1) achievementsCount++; // First Whisper
+      if (whispersCount >= 10) achievementsCount++; // 10 Whispers Shared
+      if (uniqueChains.size >= 1) achievementsCount++; // Thread Starter
+      if (uniqueChains.size >= 5) achievementsCount++; // Community Helper
+
+      return {
+        whispersCount,
+        chainsStarted: uniqueChains.size,
+        achievementsCount,
+      };
+    } catch (error) {
+      console.error('Error fetching user stats:', error);
+      return { whispersCount: 0, chainsStarted: 0, achievementsCount: 0 };
+    }
+  },
+
+  getUserWhispers: async (userId?: string): Promise<Whisper[]> => {
+    const uid = userId || getCurrentUserId();
+    if (!uid) return [];
+
+    try {
+      const { data, error } = await supabase
+        .from('whispers')
+        .select('*')
+        .eq('user_id', uid)
+        .eq('is_published', true)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching user whispers:', error);
+        return [];
+      }
+
+      if (!data || data.length === 0) return [];
+
+      // Get theme data
+      const themeIds = [...new Set(data.map((w: DbWhisper) => w.theme_id).filter(Boolean))];
+      const { data: themes } = await supabase
+        .from('themes')
+        .select('id, name, color')
+        .in('id', themeIds);
+
+      const themeMap = new Map(themes?.map((t: DbTheme) => [t.id, t]) || []);
+
+      return data.map((w: DbWhisper) => {
+        const theme = themeMap.get(w.theme_id || '') as DbTheme | undefined;
+        return transformWhisper({
+          ...w,
+          theme_name: theme?.name,
+          themes: theme,
+        });
+      });
+    } catch (error) {
+      console.error('Error in getUserWhispers:', error);
+      return [];
+    }
+  },
+
+  getUserChains: async (userId?: string): Promise<ChainResponse[]> => {
+    const uid = userId || getCurrentUserId();
+    if (!uid) return [];
+
+    try {
+      const { data, error } = await supabase
+        .from('chain_responses')
+        .select('*')
+        .eq('user_id', uid)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching user chains:', error);
+        return [];
+      }
+
+      if (!data || data.length === 0) return [];
+
+      return data.map((r: DbChainResponse) => transformChainResponse(r));
+    } catch (error) {
+      console.error('Error in getUserChains:', error);
+      return [];
+    }
+  },
+
+  deleteAccount: async (): Promise<void> => {
+    const userId = getCurrentUserId();
+    if (!userId) {
+      throw new Error('User must be authenticated to delete account');
+    }
+
+    try {
+      // Delete in order to respect foreign key constraints
+      // 1. Delete likes
+      await supabase
+        .from('likes')
+        .delete()
+        .eq('user_id', userId);
+
+      // 2. Delete chain responses
+      await supabase
+        .from('chain_responses')
+        .delete()
+        .eq('user_id', userId);
+
+      // 3. Delete whispers
+      await supabase
+        .from('whispers')
+        .delete()
+        .eq('user_id', userId);
+
+      // 4. Delete user record
+      await supabase
+        .from('users')
+        .delete()
+        .eq('id', userId);
+
+      console.log('Account deletion completed');
+    } catch (error) {
+      console.error('Error deleting account:', error);
+      throw new Error('Failed to delete account data');
+    }
+  },
+
+  updateUsername: async (newUsername: string): Promise<void> => {
+    const userId = getCurrentUserId();
+    if (!userId) {
+      throw new Error('User must be authenticated to update username');
+    }
+
+    try {
+      // Check if username is already taken
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('id')
+        .eq('username', newUsername)
+        .neq('id', userId)
+        .single();
+
+      if (existingUser) {
+        throw new Error('Username is already taken');
+      }
+
+      // Update username in database
+      const { error } = await supabase
+        .from('users')
+        .update({ username: newUsername })
+        .eq('id', userId);
+
+      if (error) {
+        throw error;
+      }
+    } catch (error) {
+      console.error('Error updating username:', error);
+      throw error;
+    }
+  },
 };
 
 // AI transformation service (placeholder)
