@@ -187,7 +187,10 @@ export default function HomeScreen() {
                 <Text style={styles.interactionText}>{whisper.likes}</Text>
               </TouchableOpacity>
               
-              <TouchableOpacity style={styles.interactionButton}>
+              <TouchableOpacity 
+                style={styles.interactionButton}
+                onPress={() => handleWhisperPress(whisper.id)}
+              >
                 <Ionicons name="chatbubble-outline" size={20} color={Colors.textSecondary} />
                 <Text style={styles.interactionText}>{whisper.chainCount}</Text>
               </TouchableOpacity>
