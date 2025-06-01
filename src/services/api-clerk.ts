@@ -656,6 +656,112 @@ export const api = {
       gradient: [theme.color, '#1a1a2e'],
     })) || [];
   },
+
+  getThemesWithCounts: async (): Promise<(Theme & { whisperCount: number })[]> => {
+    try {
+      // Execute raw SQL to get theme counts efficiently
+      const { data, error } = await supabase.rpc('get_theme_counts');
+      
+      if (error) {
+        console.error('Error fetching theme counts:', error);
+        // Fallback to regular method
+        const { data: themes } = await supabase
+          .from('themes')
+          .select('*')
+          .eq('is_active', true);
+
+        if (!themes) return [];
+
+        // Get counts individually
+        const themesWithCounts = await Promise.all(
+          themes.map(async (theme) => {
+            const { data: whispers } = await supabase
+              .from('whispers')
+              .select('id')
+              .eq('theme_id', theme.id)
+              .eq('is_published', true);
+
+            return {
+              id: theme.id,
+              name: theme.name,
+              description: theme.description || '',
+              accentColor: theme.color,
+              backgroundColor: '#1a1a2e',
+              gradient: [theme.color, '#1a1a2e'],
+              whisperCount: whispers?.length || 0,
+            };
+          })
+        );
+
+        return themesWithCounts;
+      }
+
+      // Transform the RPC result
+      return data?.map((theme: any) => ({
+        id: theme.id,
+        name: theme.name,
+        description: theme.description || '',
+        accentColor: theme.color,
+        backgroundColor: '#1a1a2e',
+        gradient: [theme.color, '#1a1a2e'],
+        whisperCount: parseInt(theme.whisper_count) || 0,
+      })) || [];
+    } catch (error) {
+      console.error('Error in getThemesWithCounts:', error);
+      return [];
+    }
+  },
+
+  getWhispersByTheme: async (themeName: string): Promise<Whisper[]> => {
+    // First get the theme ID
+    const { data: themeData } = await supabase
+      .from('themes')
+      .select('id')
+      .eq('name', themeName)
+      .single();
+
+    if (!themeData) {
+      return [];
+    }
+
+    // Then get whispers for that theme
+    const currentUserId = getCurrentUserId();
+    const { data, error } = await supabase
+      .from('whispers')
+      .select('*')
+      .eq('theme_id', themeData.id)
+      .eq('is_published', true)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching whispers by theme:', error);
+      return [];
+    }
+
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    // Get user data for the whispers
+    const userIds = [...new Set(data.map(w => w.user_id).filter(Boolean))];
+    const { data: users } = await supabase
+      .from('users')
+      .select('id, username, display_name')
+      .in('id', userIds);
+
+    const userMap = new Map(users?.map(u => [u.id, u]) || []);
+
+    return data.map(w => {
+      const user = userMap.get(w.user_id);
+      return transformWhisper({
+        ...w,
+        theme_name: themeName,
+        username: user?.username,
+        display_name: user?.display_name,
+        users: user,
+      }, currentUserId);
+    });
+  },
 };
 
 // AI transformation service (placeholder)
