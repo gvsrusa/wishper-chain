@@ -4,24 +4,76 @@ import { Whisper, ChainResponse, User, Theme } from '../types';
 import { useAuth } from '@clerk/clerk-expo';
 
 // Get the current user from Clerk context
-let getCurrentUserFromContext: (() => string | null) | null = null;
+let currentUserId: string | null = null;
+let isAuthContextInitialized = false;
 
-export const setAuthContext = (authGetter: () => string | null) => {
-  getCurrentUserFromContext = authGetter;
+export const setAuthContext = (userId: string | null) => {
+  currentUserId = userId;
+  isAuthContextInitialized = true;
+  console.log('Auth context initialized with userId:', userId);
 };
+
+export const isAuthReady = () => isAuthContextInitialized;
+export const getCurrentUserIdDebug = () => currentUserId;
 
 const getCurrentUserId = (): string | null => {
-  if (getCurrentUserFromContext) {
-    const userId = getCurrentUserFromContext();
-    console.log('getCurrentUserId returning:', userId);
-    return userId;
-  }
-  console.warn('Auth context not set. Call setAuthContext in your app initialization.');
-  return null;
+  console.log('getCurrentUserId called, currentUserId:', currentUserId);
+  return currentUserId;
 };
 
+// Database types
+interface DbWhisper {
+  id: string;
+  user_id: string;
+  original_text: string;
+  transformed_text: string;
+  theme_id?: string;
+  theme_name?: string;
+  themes?: { id: string; name: string; color: string };
+  likes_count?: number;
+  chain_count?: number;
+  created_at: string;
+  is_liked?: boolean;
+  username?: string;
+  display_name?: string;
+  users?: { id: string; username: string; display_name: string };
+}
+
+interface DbChainResponse {
+  id: string;
+  whisper_id: string;
+  user_id: string;
+  original_text: string;
+  transformed_text: string;
+  created_at: string;
+  response_order?: number;
+  username?: string;
+  display_name?: string;
+  users?: { id: string; username: string; display_name: string };
+}
+
+interface DbTheme {
+  id: string;
+  name: string;
+  description?: string;
+  color: string;
+  is_active?: boolean;
+}
+
+interface DbUser {
+  id: string;
+  username: string;
+  display_name: string;
+}
+
+interface DbLike {
+  id?: string;
+  whisper_id: string;
+  user_id: string;
+}
+
 // Transform database response to app types
-const transformWhisper = (dbWhisper: any, currentUserId?: string | null): Whisper => ({
+const transformWhisper = (dbWhisper: DbWhisper, currentUserId?: string | null): Whisper => ({
   id: dbWhisper.id,
   userId: dbWhisper.user_id,
   originalText: dbWhisper.original_text,
@@ -35,16 +87,28 @@ const transformWhisper = (dbWhisper: any, currentUserId?: string | null): Whispe
   displayName: dbWhisper.users?.display_name || dbWhisper.display_name || 'Anonymous',
 });
 
-const transformChainResponse = (dbResponse: any): ChainResponse => ({
-  id: dbResponse.id,
-  whisperId: dbResponse.whisper_id,
-  userId: dbResponse.user_id,
-  originalText: dbResponse.original_text,
-  transformedText: dbResponse.transformed_text,
-  createdAt: new Date(dbResponse.created_at),
-  username: dbResponse.users?.username || 'anonymous',
-  displayName: dbResponse.users?.display_name || 'Anonymous',
-});
+const transformChainResponse = (dbResponse: DbChainResponse): ChainResponse => {
+  console.log('Transforming chain response:', dbResponse);
+  
+  try {
+    const transformed = {
+      id: dbResponse.id,
+      whisperId: dbResponse.whisper_id,
+      userId: dbResponse.user_id,
+      originalText: dbResponse.original_text,
+      transformedText: dbResponse.transformed_text,
+      createdAt: dbResponse.created_at ? new Date(dbResponse.created_at) : new Date(),
+      username: dbResponse.users?.username || 'anonymous',
+      displayName: dbResponse.users?.display_name || 'Anonymous',
+    };
+    
+    console.log('Transformed result:', transformed);
+    return transformed;
+  } catch (error) {
+    console.error('Error in transformChainResponse:', error);
+    throw new Error(`Failed to transform chain response: ${error}`);
+  }
+};
 
 export const api = {
   // Authentication - handled by Clerk, these are just for compatibility
@@ -62,6 +126,7 @@ export const api = {
 
   // Whispers
   getWhispers: async (sortBy: string = 'trending'): Promise<Whisper[]> => {
+    // Don't wait for auth - whispers are publicly viewable
     const currentUserId = getCurrentUserId();
     console.log('getWhispers - currentUserId:', currentUserId);
     
@@ -94,8 +159,8 @@ export const api = {
 
     // Fetch related data
     if (data && data.length > 0) {
-      const themeIds = [...new Set(data.map(w => w.theme_id).filter(Boolean))];
-      const userIds = [...new Set(data.map(w => w.user_id).filter(Boolean))];
+      const themeIds = [...new Set(data.map((w: DbWhisper) => w.theme_id).filter(Boolean))];
+      const userIds = [...new Set(data.map((w: DbWhisper) => w.user_id).filter(Boolean))];
 
       // Fetch themes and users
       const [themesResult, usersResult, likesResult] = await Promise.all([
@@ -104,16 +169,16 @@ export const api = {
         currentUserId ? supabase.from('likes').select('whisper_id').eq('user_id', currentUserId) : null
       ]);
 
-      const themeMap = new Map(themesResult?.data?.map(t => [t.id, t]) || []);
-      const userMap = new Map(usersResult?.data?.map(u => [u.id, u]) || []);
-      const likedWhisperIds = new Set(likesResult?.data?.map(l => l.whisper_id) || []);
+      const themeMap = new Map(themesResult?.data?.map((t: DbTheme) => [t.id, t]) || []);
+      const userMap = new Map(usersResult?.data?.map((u: DbUser) => [u.id, u]) || []);
+      const likedWhisperIds = new Set(likesResult?.data?.map((l: DbLike) => l.whisper_id) || []);
       
       console.log('Likes found for user:', likesResult?.data);
       console.log('Liked whisper IDs:', Array.from(likedWhisperIds));
 
-      return data.map(w => {
-        const theme = themeMap.get(w.theme_id);
-        const user = userMap.get(w.user_id);
+      return data.map((w: DbWhisper) => {
+        const theme = themeMap.get(w.theme_id || '') as DbTheme | undefined;
+        const user = userMap.get(w.user_id) as DbUser | undefined;
         return transformWhisper({
           ...w,
           theme_name: theme?.name,
@@ -130,18 +195,39 @@ export const api = {
   },
 
   getWhisperById: async (id: string): Promise<Whisper | null> => {
+    console.log('getWhisperById called with id:', id);
+    
+    // Don't wait for auth - whispers are publicly viewable
     const currentUserId = getCurrentUserId();
     
-    const { data, error } = await supabase
-      .from('whispers')
-      .select('*')
-      .eq('id', id)
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from('whispers')
+        .select('*')
+        .eq('id', id)
+        .single();
 
-    if (error) {
-      console.error('Error fetching whisper:', error);
-      return null;
-    }
+      console.log('Whisper query result:');
+      console.log('- Data:', data);
+      console.log('- Error:', error);
+      console.log('- URL would be:', `${supabase.from('whispers').baseUrl}/whispers?select=*&id=eq.${id}`);
+
+      if (error) {
+        console.error('Error fetching whisper:', error);
+        console.error('Error details:', { 
+          message: error.message, 
+          code: error.code, 
+          details: error.details,
+          hint: error.hint,
+          status: error.status 
+        });
+        return null;
+      }
+      
+      if (!data) {
+        console.error('No data returned for whisper ID:', id);
+        return null;
+      }
 
     if (data) {
       // Fetch related data
@@ -151,15 +237,22 @@ export const api = {
         currentUserId ? supabase.from('likes').select('id').eq('whisper_id', id).eq('user_id', currentUserId).single() : null
       ]);
 
+      const themeData = themeResult?.data as { id: string; name: string; color: string } | null;
+      const userData = userResult?.data as { id: string; username: string; display_name: string } | null;
+
       return transformWhisper({
         ...data,
-        theme_name: themeResult?.data?.name,
-        themes: themeResult?.data,
-        username: userResult?.data?.username,
-        display_name: userResult?.data?.display_name,
-        users: userResult?.data,
+        theme_name: themeData?.name,
+        themes: themeData,
+        username: userData?.username,
+        display_name: userData?.display_name,
+        users: userData,
         is_liked: !!likeResult?.data,
       }, currentUserId);
+    }
+    } catch (error) {
+      console.error('Unexpected error in getWhisperById:', error);
+      return null;
     }
 
     return null;
@@ -216,7 +309,18 @@ export const api = {
   },
 
   toggleLike: async (whisperId: string, providedUserId?: string): Promise<boolean> => {
-    const userId = providedUserId || getCurrentUserId();
+    let userId: string | undefined = providedUserId;
+    
+    if (!userId) {
+      // Wait a moment if auth context is being set
+      if (!isAuthContextInitialized) {
+        console.log('Waiting for auth context to initialize for toggleLike...');
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      const currentUserIdResult = getCurrentUserId();
+      userId = currentUserIdResult ?? undefined;
+    }
+    
     console.log('toggleLike called - whisperId:', whisperId, 'userId:', userId);
     
     if (!userId) {
@@ -279,19 +383,26 @@ export const api = {
 
   // Chain responses
   getChainResponses: async (whisperId: string): Promise<ChainResponse[]> => {
-    const { data, error } = await supabase
-      .from('chain_responses')
-      .select('*')
-      .eq('whisper_id', whisperId)
-      .order('created_at', { ascending: true });
+    console.log('getChainResponses called with whisperId:', whisperId);
+    
+    try {
+      // Don't wait for auth - chain responses are publicly viewable
+      const { data, error } = await supabase
+        .from('chain_responses')
+        .select('*')
+        .eq('whisper_id', whisperId)
+        .order('response_order', { ascending: true });
 
-    if (error) {
-      console.error('Error fetching chain responses:', error);
-      return [];
-    }
+      console.log('Chain responses query result - data:', data, 'error:', error);
+
+      if (error) {
+        console.error('Error fetching chain responses:', error);
+        console.error('Error details:', { message: error.message, code: error.code, details: error.details });
+        return [];
+      }
 
     if (data && data.length > 0) {
-      const userIds = [...new Set(data.map(r => r.user_id).filter(Boolean))];
+      const userIds = [...new Set(data.map((r: DbChainResponse) => r.user_id).filter(Boolean))];
       
       // Fetch users
       const { data: users } = await supabase
@@ -299,10 +410,10 @@ export const api = {
         .select('id, username, display_name')
         .in('id', userIds);
 
-      const userMap = new Map(users?.map(u => [u.id, u]) || []);
+      const userMap = new Map(users?.map((u: DbUser) => [u.id, u]) || []);
 
-      return data.map(r => {
-        const user = userMap.get(r.user_id);
+      return data.map((r: DbChainResponse) => {
+        const user = userMap.get(r.user_id) as DbUser | undefined;
         return transformChainResponse({
           ...r,
           username: user?.username,
@@ -311,47 +422,146 @@ export const api = {
         });
       });
     }
+    } catch (error) {
+      console.error('Unexpected error in getChainResponses:', error);
+      return [];
+    }
 
     return [];
   },
 
-  createChainResponse: async (whisperId: string, originalText: string): Promise<ChainResponse> => {
-    const userId = getCurrentUserId();
+  createChainResponse: async (whisperId: string, originalText: string, providedUserId?: string): Promise<ChainResponse> => {
+    // Use provided user ID if available, otherwise get from context
+    let userId: string | undefined = providedUserId;
+    
     if (!userId) {
+      // Wait a moment if auth context is being set
+      if (!isAuthContextInitialized) {
+        console.log('Waiting for auth context to initialize...');
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      const currentUserIdResult = getCurrentUserId();
+      userId = currentUserIdResult ?? undefined;
+    }
+    
+    console.log('Creating chain response - userId:', userId, 'whisperId:', whisperId);
+    
+    if (!userId) {
+      console.error('No user ID available, currentUserId:', currentUserId, 'providedUserId:', providedUserId);
       throw new Error('User must be authenticated to create chain responses');
     }
 
-    // Transform text using AI
-    const transformedText = await transformText(originalText);
+    // Get current user info from auth context for fallback
+    let currentUserInfo = {
+      username: 'anonymous',
+      display_name: 'Anonymous'
+    };
 
-    const { data, error } = await supabase
-      .from('chain_responses')
-      .insert({
-        whisper_id: whisperId,
-        user_id: userId,
-        original_text: originalText,
-        transformed_text: transformedText,
-      })
-      .select('*')
-      .single();
+    try {
+      // Get the last response_order for this whisper
+      const { data: lastResponse } = await supabase
+        .from('chain_responses')
+        .select('response_order')
+        .eq('whisper_id', whisperId)
+        .order('response_order', { ascending: false })
+        .limit(1);
 
-    if (error) {
-      console.error('Error creating chain response:', error);
+      const nextOrder = lastResponse && lastResponse.length > 0 
+        ? (lastResponse[0].response_order || 0) + 1 
+        : 1;
+
+      console.log('Next response order:', nextOrder);
+
+      // Transform text using AI
+      const transformedText = await transformText(originalText);
+
+      // Generate a temporary ID for optimistic UI update
+      const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Insert with returning data
+      const { data: insertData, error: insertError } = await supabase
+        .from('chain_responses')
+        .insert({
+          whisper_id: whisperId,
+          user_id: userId,
+          original_text: originalText,
+          transformed_text: transformedText,
+          response_order: nextOrder,
+        });
+
+      if (insertError) {
+        console.error('Error creating chain response:', insertError);
+        throw insertError;
+      }
+
+      console.log('Chain response inserted:', insertData);
+
+      // If we got data back from insert, use it
+      let responseData = insertData;
+      
+      // If no data returned from insert (due to RLS), create optimistic response
+      if (!responseData || !responseData.id) {
+        console.log('No data returned from insert - using optimistic response');
+        // Create an optimistic response with the data we know
+        responseData = {
+          id: tempId,
+          whisper_id: whisperId,
+          user_id: userId,
+          original_text: originalText,
+          transformed_text: transformedText,
+          response_order: nextOrder,
+          created_at: new Date().toISOString(),
+        };
+        
+        // Try to fetch the real data in the background
+        setTimeout(async () => {
+          try {
+            const { data: realData } = await supabase
+              .from('chain_responses')
+              .select('*')
+              .eq('whisper_id', whisperId)
+              .eq('user_id', userId)
+              .eq('response_order', nextOrder)
+              .single();
+            
+            if (realData) {
+              console.log('Found real chain response data:', realData);
+            }
+          } catch (error) {
+            console.error('Failed to fetch real chain response:', error);
+          }
+        }, 1000);
+      }
+
+      console.log('Using response data from database:', responseData);
+
+      // Fetch user data for the response
+      let userData = null;
+      try {
+        const { data } = await supabase
+          .from('users')
+          .select('username, display_name')
+          .eq('id', userId)
+          .single();
+        userData = data;
+      } catch (error) {
+        console.log('Failed to fetch user data, using fallback:', error);
+      }
+
+      // Transform the response
+      const result = transformChainResponse({
+        ...responseData,
+        users: userData || currentUserInfo,
+      });
+
+      console.log('Transformed chain response:', result);
+      return result;
+      
+    } catch (error) {
+      console.error('Error in createChainResponse:', error);
       throw error;
     }
-
-    // Fetch user data
-    const { data: userData } = await supabase
-      .from('users')
-      .select('username, display_name')
-      .eq('id', userId)
-      .single();
-
-    return transformChainResponse({
-      ...data,
-      username: userData?.username,
-      display_name: userData?.display_name,
-    });
   },
 
   // Search
@@ -372,14 +582,14 @@ export const api = {
     }
 
     // Filter by query
-    const filtered = data?.filter(w => 
+    const filtered = data?.filter((w: DbWhisper) => 
       w.original_text.toLowerCase().includes(query.toLowerCase()) ||
       w.transformed_text.toLowerCase().includes(query.toLowerCase())
     ).slice(0, 20) || [];
 
     if (filtered.length > 0) {
-      const themeIds = [...new Set(filtered.map(w => w.theme_id).filter(Boolean))];
-      const userIds = [...new Set(filtered.map(w => w.user_id).filter(Boolean))];
+      const themeIds = [...new Set(filtered.map((w: DbWhisper) => w.theme_id).filter(Boolean))];
+      const userIds = [...new Set(filtered.map((w: DbWhisper) => w.user_id).filter(Boolean))];
 
       // Fetch related data
       const [themesResult, usersResult, likesResult] = await Promise.all([
@@ -388,13 +598,13 @@ export const api = {
         currentUserId ? supabase.from('likes').select('whisper_id').eq('user_id', currentUserId) : null
       ]);
 
-      const themeMap = new Map(themesResult?.data?.map(t => [t.id, t]) || []);
-      const userMap = new Map(usersResult?.data?.map(u => [u.id, u]) || []);
-      const likedWhisperIds = new Set(likesResult?.data?.map(l => l.whisper_id) || []);
+      const themeMap = new Map(themesResult?.data?.map((t: DbTheme) => [t.id, t]) || []);
+      const userMap = new Map(usersResult?.data?.map((u: DbUser) => [u.id, u]) || []);
+      const likedWhisperIds = new Set(likesResult?.data?.map((l: DbLike) => l.whisper_id) || []);
 
-      return filtered.map(w => {
-        const theme = themeMap.get(w.theme_id);
-        const user = userMap.get(w.user_id);
+      return filtered.map((w: DbWhisper) => {
+        const theme = themeMap.get(w.theme_id || '') as DbTheme | undefined;
+        const user = userMap.get(w.user_id) as DbUser | undefined;
         return transformWhisper({
           ...w,
           theme_name: theme?.name,
@@ -423,7 +633,7 @@ export const api = {
       return [];
     }
 
-    return data?.map(theme => ({
+    return data?.map((theme: DbTheme) => ({
       id: theme.id,
       name: theme.name,
       description: theme.description || '',

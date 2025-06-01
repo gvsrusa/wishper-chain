@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
@@ -6,8 +6,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Typography } from '../constants';
 import { RootStackParamList, Whisper, ChainResponse } from '../types';
-import { api } from '../services/api';
+import { api, getCurrentUserIdDebug, setAuthContext } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useApiReady } from '../components/AuthenticatedApp';
 import { addWordBreaks } from '../utils/textUtils';
 
 type WhisperChainScreenNavigationProp = StackNavigationProp<RootStackParamList, 'WhisperChain'>;
@@ -20,40 +21,137 @@ interface Props {
 
 
 export default function WhisperChainScreen({ navigation, route }: Props) {
-  const { user } = useAuth();
+  const { user, isLoading: isAuthLoading } = useAuth();
+  const { isApiReady } = useApiReady();
   const insets = useSafeAreaInsets();
   const [whisper, setWhisper] = useState<Whisper | null>(null);
   const [chainResponses, setChainResponses] = useState<ChainResponse[]>([]);
   const [newResponse, setNewResponse] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const isMounted = useRef(true);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+  
 
   useEffect(() => {
+    // Load data immediately - whispers are publicly viewable
+    const whisperId = route.params?.whisperId;
+    console.log('WhisperChainScreen mounted, whisperId:', whisperId);
+    console.log('Route params:', route.params);
+    console.log('Initial states - loading:', loading, 'isApiReady:', isApiReady, 'isAuthLoading:', isAuthLoading);
+    
+    if (!whisperId) {
+      console.error('No whisperId provided in route params!');
+      setLoading(false);
+      Alert.alert('Error', 'No whisper ID provided');
+      return;
+    }
+    
     loadWhisperAndChain();
-  }, [route.params.whisperId]);
+  }, [route.params?.whisperId]);
+
+  // Track when auth is ready
+  useEffect(() => {
+    if (!isAuthLoading && user && isApiReady) {
+      console.log('Auth and API are ready, user:', user.id);
+      // Double-check the API has the correct user ID
+      const apiUserId = getCurrentUserIdDebug();
+      if (apiUserId !== user.id) {
+        console.warn('API user ID mismatch, re-setting auth context');
+        setAuthContext(user.id);
+      }
+      setIsAuthReady(true);
+    } else if (!isAuthLoading && !user) {
+      console.log('Auth loaded but no user');
+      setIsAuthReady(false);
+    } else if (!isApiReady) {
+      console.log('Waiting for API context to be ready');
+      setIsAuthReady(false);
+    }
+  }, [isAuthLoading, user, isApiReady]);
 
   const loadWhisperAndChain = async () => {
+    // Prevent multiple simultaneous loads
+    if (loading) {
+      console.log('Already loading, skipping...');
+      return;
+    }
+    
+    console.log('loadWhisperAndChain called, current loading state:', loading);
+    
     try {
       setLoading(true);
+      console.log('Loading whisper chain data...');
+      
+      const whisperId = route.params?.whisperId;
+      if (!whisperId) {
+        throw new Error('No whisper ID available');
+      }
+      
+      console.log('Calling API with whisperId:', whisperId);
+      
+      // Call APIs directly without race condition
       const [whisperData, chainData] = await Promise.all([
-        api.getWhisperById(route.params.whisperId, user?.id),
-        api.getChainResponses(route.params.whisperId)
+        api.getWhisperById(whisperId),
+        api.getChainResponses(whisperId)
       ]);
+      
+      // Check if still mounted before updating state
+      if (!isMounted.current) {
+        console.log('Component unmounted, skipping state update');
+        return;
+      }
       
       if (whisperData) {
         setWhisper(whisperData);
       }
-      setChainResponses(chainData);
-    } catch (error) {
+      setChainResponses(chainData || []);
+      console.log('Whisper chain data loaded successfully');
+    } catch (error: any) {
       console.error('Error loading whisper chain:', error);
-      Alert.alert('Error', 'Failed to load whisper chain');
+      console.error('Error stack:', error?.stack);
+      
+      if (!isMounted.current) return;
+      
+      // Show error and navigate back
+      Alert.alert(
+        'Error', 
+        'Failed to load whisper chain', 
+        [
+          {
+            text: 'Go Back',
+            onPress: () => navigation.goBack()
+          }
+        ]
+      );
     } finally {
-      setLoading(false);
+      if (isMounted.current) {
+        setLoading(false);
+      }
     }
   };
 
   const handleSubmitResponse = async () => {
-    if (!user) {
+    const currentApiUserId = getCurrentUserIdDebug();
+    console.log('handleSubmitResponse called:');
+    console.log('- isAuthReady:', isAuthReady);
+    console.log('- isApiReady:', isApiReady);
+    console.log('- user from context:', user?.id);
+    console.log('- user ID in API:', currentApiUserId);
+    
+    if (!user || !isAuthReady || !isApiReady) {
+      if (isAuthLoading || !isApiReady) {
+        Alert.alert('Please Wait', 'Initializing...');
+        return;
+      }
+      
       Alert.alert('Authentication Required', 'Please sign in to add to the chain.', [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Sign In', onPress: () => navigation.navigate('Auth') }
@@ -66,21 +164,69 @@ export default function WhisperChainScreen({ navigation, route }: Props) {
     setIsSubmitting(true);
     
     try {
+      // Ensure auth context is set with current user
+      if (currentApiUserId !== user.id) {
+        console.log('Setting auth context before creating response');
+        setAuthContext(user.id);
+        // Small delay to ensure it's set
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      
+      console.log('Calling createChainResponse with user:', user.id);
       const response = await api.createChainResponse(
         route.params.whisperId,
         newResponse.trim(),
-        user.id
+        user.id  // Pass user ID directly
       );
       
-      setChainResponses(prev => [...prev, response]);
+      console.log('Response received:', response);
+      console.log('Response type:', typeof response);
+      console.log('Response keys:', response ? Object.keys(response) : 'null');
+      
+      if (!response) {
+        throw new Error('No response received from server');
+      }
+      
+      if (!response.id) {
+        console.error('Response missing id:', response);
+        throw new Error('Invalid response received from server - missing ID');
+      }
+      
+      // Add the response to the list
+      setChainResponses(prev => {
+        console.log('Adding response to chain responses');
+        return [...prev, response];
+      });
+      
       setNewResponse('');
       
       // Update whisper chain count
       if (whisper) {
         setWhisper({ ...whisper, chainCount: whisper.chainCount + 1 });
       }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to add response to chain');
+      
+      console.log('Successfully added chain response');
+    } catch (error: any) {
+      console.error('Error creating chain response:', error);
+      console.error('Error type:', typeof error);
+      console.error('Error details:', error?.message || 'Unknown error');
+      console.error('Error stack:', error?.stack);
+      
+      // More specific error messages
+      let errorMessage = 'Failed to add response to chain';
+      if (error?.message) {
+        if (error.message.includes('No data returned')) {
+          errorMessage = 'Server did not return response data. Please try again.';
+        } else if (error.message.includes('Invalid response')) {
+          errorMessage = 'Invalid response from server. Please try again.';
+        } else if (error.message.includes('authenticated')) {
+          errorMessage = 'You must be signed in to respond.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      Alert.alert('Error', errorMessage);
     } finally {
       setIsSubmitting(false);
     }
@@ -137,8 +283,8 @@ export default function WhisperChainScreen({ navigation, route }: Props) {
                 <Ionicons name="person" size={20} color={Colors.textPrimary} />
               </View>
               <View>
-                <Text style={styles.username}>Sophia</Text>
-                <Text style={styles.timestamp}>2 hours ago</Text>
+                <Text style={styles.username}>{whisper.displayName || whisper.username || 'Anonymous'}</Text>
+                <Text style={styles.timestamp}>{new Date(whisper.createdAt).toLocaleTimeString()}</Text>
               </View>
             </View>
             <View style={[styles.themeTag, { backgroundColor: getThemeColor(whisper.theme) }]}>
@@ -163,8 +309,8 @@ export default function WhisperChainScreen({ navigation, route }: Props) {
                     <Ionicons name="person" size={20} color={Colors.textPrimary} />
                   </View>
                   <View>
-                    <Text style={styles.username}>Anonymous</Text>
-                    <Text style={styles.timestamp}>1 hour ago</Text>
+                    <Text style={styles.username}>{response.displayName || response.username || 'Anonymous'}</Text>
+                    <Text style={styles.timestamp}>{new Date(response.createdAt).toLocaleTimeString()}</Text>
                   </View>
                 </View>
               </View>
@@ -186,22 +332,23 @@ export default function WhisperChainScreen({ navigation, route }: Props) {
         <View style={[styles.inputSection, { paddingBottom: 16 + insets.bottom }]}>
           <TextInput
             style={styles.responseInput}
-            placeholder="Whisper your thoughts..."
+            placeholder={(!isAuthReady || !isApiReady) ? "Initializing..." : "Whisper your thoughts..."}
             placeholderTextColor={Colors.textSecondary}
             value={newResponse}
             onChangeText={setNewResponse}
             multiline
             maxLength={300}
+            editable={isAuthReady && isApiReady}
           />
           <TouchableOpacity
-            style={[styles.sendButton, (!newResponse.trim() || isSubmitting) && styles.disabledButton]}
+            style={[styles.sendButton, (!newResponse.trim() || isSubmitting || !isAuthReady || !isApiReady) && styles.disabledButton]}
             onPress={handleSubmitResponse}
-            disabled={!newResponse.trim() || isSubmitting}
+            disabled={!newResponse.trim() || isSubmitting || !isAuthReady || !isApiReady}
           >
             <Ionicons 
-              name={isSubmitting ? "hourglass" : "send"} 
+              name={isSubmitting ? "hourglass" : (!isAuthReady || !isApiReady) ? "time" : "send"} 
               size={20} 
-              color={(!newResponse.trim() || isSubmitting) ? Colors.textSecondary : Colors.textPrimary} 
+              color={(!newResponse.trim() || isSubmitting || !isAuthReady || !isApiReady) ? Colors.textSecondary : Colors.textPrimary} 
             />
           </TouchableOpacity>
         </View>

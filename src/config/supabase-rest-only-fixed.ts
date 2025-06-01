@@ -194,6 +194,7 @@ class RestOnlyQueryBuilder {
       url += `&limit=${this.limitValue}`;
     }
     
+    console.log('Built URL:', url);
     return url;
   }
 

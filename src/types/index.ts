@@ -18,6 +18,8 @@ export interface Whisper {
   chainCount: number;
   createdAt: Date;
   isLiked?: boolean;
+  username?: string;
+  displayName?: string;
 }
 
 export interface ChainResponse {
@@ -27,6 +29,8 @@ export interface ChainResponse {
   originalText: string;
   transformedText: string;
   createdAt: Date;
+  username?: string;
+  displayName?: string;
 }
 
 export interface Theme {
