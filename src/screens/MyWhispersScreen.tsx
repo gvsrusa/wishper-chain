@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Colors, Typography } from '../constants';
 import { api } from '../services/api';
@@ -14,9 +14,12 @@ export default function MyWhispersScreen() {
   const [whispers, setWhispers] = useState<Whisper[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    fetchUserWhispers();
-  }, []);
+  // Refresh whispers whenever screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      fetchUserWhispers();
+    }, [])
+  );
 
   const fetchUserWhispers = async () => {
     try {
@@ -31,7 +34,13 @@ export default function MyWhispersScreen() {
   };
 
   const handleWhisperPress = (whisperId: string) => {
-    navigation.navigate('WhisperChain', { whisperId });
+    navigation.navigate('WhisperChain', { 
+      whisperId,
+      onRefresh: () => {
+        // Refresh whispers when coming back
+        fetchUserWhispers();
+      }
+    });
   };
 
   const getThemeColor = (theme: string) => {

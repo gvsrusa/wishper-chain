@@ -61,7 +61,7 @@ export type BottomTabParamList = {
 export type RootStackParamList = {
   Auth: undefined;
   Main: undefined;
-  WhisperChain: { whisperId: string };
+  WhisperChain: { whisperId: string; onRefresh?: () => void };
   Settings: undefined;
   Search: { initialQuery?: string; filterTheme?: string } | undefined;
   MyWhispers: undefined;

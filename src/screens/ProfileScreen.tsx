@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Colors, Typography } from '../constants';
 import { useAuth } from '../context/AuthContext';
@@ -28,9 +28,12 @@ export default function ProfileScreen() {
     { name: 'Guessed Right 5 Times', icon: 'checkmark-circle', isEarned: false },
   ];
 
-  useEffect(() => {
-    fetchUserStats();
-  }, []);
+  // Refresh stats whenever screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      fetchUserStats();
+    }, [])
+  );
 
   const fetchUserStats = async () => {
     try {

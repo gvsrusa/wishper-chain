@@ -30,21 +30,34 @@ export default function HomeScreen() {
   // Load whispers on component mount and when HomeScreen is focused
   useFocusEffect(
     React.useCallback(() => {
-      if (user) {
-        loadWhispers();
-      }
-    }, [sortBy, user])
+      // Load whispers regardless of user state (they're public)
+      loadWhispers();
+    }, [sortBy])
   );
 
   const loadWhispers = async () => {
     try {
       setLoading(true);
       setError(null);
+      console.log('Loading whispers with sortBy:', sortBy);
+      console.log('Current user:', user);
       const data = await api.getWhispers(sortBy.toLowerCase());
+      console.log('Whispers loaded:', data?.length || 0, 'items');
+      console.log('First whisper:', data?.[0]);
       setWhispers(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load whispers');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load whispers';
+      setError(errorMessage);
       console.error('Error loading whispers:', err);
+      console.error('Error details:', {
+        message: err instanceof Error ? err.message : 'Unknown error',
+        stack: err instanceof Error ? err.stack : 'No stack',
+        error: err
+      });
+      // Don't show error if it's just a sync issue, whispers should still load
+      if (errorMessage.includes('syncing user')) {
+        setError(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -96,7 +109,13 @@ export default function HomeScreen() {
   };
 
   const handleWhisperPress = (whisperId: string) => {
-    navigation.navigate('WhisperChain', { whisperId });
+    navigation.navigate('WhisperChain', { 
+      whisperId,
+      onRefresh: () => {
+        // Refresh whispers when coming back from chain screen
+        loadWhispers();
+      }
+    });
   };
 
   const handleSearchPress = () => {

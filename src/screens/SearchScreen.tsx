@@ -15,6 +15,7 @@ import { RouteProp } from '@react-navigation/native';
 import { Colors, Typography } from '../constants';
 import { RootStackParamList, Whisper, Theme } from '../types';
 import { api } from '../services/api';
+import { addWordBreaks } from '../utils/textUtils';
 
 type SearchScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Search'>;
 type SearchScreenRouteProp = RouteProp<RootStackParamList, 'Search'>;
@@ -180,7 +181,15 @@ export default function SearchScreen({ navigation, route }: Props) {
   };
 
   const handleWhisperPress = (whisperId: string) => {
-    navigation.navigate('WhisperChain', { whisperId });
+    navigation.navigate('WhisperChain', { 
+      whisperId,
+      onRefresh: () => {
+        // Refresh search results when coming back
+        if (query.length > 2 || selectedTheme) {
+          performSearch();
+        }
+      }
+    });
   };
 
   const getThemeColor = (theme: string) => {
@@ -352,10 +361,10 @@ export default function SearchScreen({ navigation, route }: Props) {
                 </View>
                 
                 <View style={styles.textContent}>
-                  <Text style={styles.transformedText} numberOfLines={0}>
-                    {whisper.transformedText}
+                  <Text style={styles.transformedText}>
+                    {addWordBreaks(whisper.transformedText)}
                   </Text>
-                  <Text style={styles.originalText} numberOfLines={0}>
+                  <Text style={styles.originalText} numberOfLines={2} ellipsizeMode="tail">
                     "{whisper.originalText}"
                   </Text>
                 </View>
@@ -464,8 +473,6 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     marginBottom: 12,
-    overflow: 'hidden',
-    minHeight: 120,
   },
   themeTag: {
     alignSelf: 'flex-start',
@@ -480,22 +487,18 @@ const styles = StyleSheet.create({
     fontWeight: Typography.fontWeight.medium,
   },
   textContent: {
-    flex: 1,
-    width: '100%',
+    marginBottom: 16,
   },
   transformedText: {
     color: Colors.textPrimary,
     fontSize: Typography.fontSize.base,
-    lineHeight: Typography.fontSize.base * Typography.lineHeight.normal,
+    lineHeight: Typography.fontSize.base * Typography.lineHeight.relaxed,
     marginBottom: 8,
-    flexWrap: 'wrap',
   },
   originalText: {
     color: Colors.textSecondary,
     fontSize: Typography.fontSize.sm,
     fontStyle: 'italic',
-    marginBottom: 16,
-    flexWrap: 'wrap',
     lineHeight: Typography.fontSize.sm * Typography.lineHeight.normal,
   },
   interactionBar: {

@@ -40,57 +40,56 @@ export class ClerkSupabaseAuth {
       
       // Prepare user data
       const userData = {
-        clerk_user_id: clerkUser.id,
         email: clerkUser.primaryEmailAddress?.emailAddress || null,
         username: clerkUser.username || clerkUser.primaryEmailAddress?.emailAddress?.split('@')[0] || `user_${clerkUser.id.slice(-6)}`,
         display_name: clerkUser.fullName || clerkUser.firstName || clerkUser.username || 'Anonymous',
-        first_name: clerkUser.firstName || null,
-        last_name: clerkUser.lastName || null,
         avatar_url: clerkUser.imageUrl || null,
         is_anonymous: false,
         last_seen: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
 
-      // Check if user exists by clerk_user_id
+      // Check if user exists by id (using Clerk ID as primary key)
       const { data: existingUsers, error: fetchError } = await supabase
         .from('users')
         .select('*')
-        .eq('clerk_user_id', clerkUser.id);
+        .eq('id', clerkUser.id);
 
       let user;
       
       if (!existingUsers || existingUsers.length === 0) {
         // User doesn't exist, create new
-        // For new users, we need to handle the id field based on the schema
+        // For new users, use Clerk ID as primary key
         const insertData: any = {
-          ...userData,
-          id: clerkUser.id, // Try using Clerk ID as primary key
+          id: clerkUser.id, // Use Clerk ID as primary key
+          email: userData.email,
+          username: userData.username,
+          display_name: userData.display_name,
+          avatar_url: userData.avatar_url,
+          is_anonymous: userData.is_anonymous,
+          last_seen: userData.last_seen,
+          created_at: new Date().toISOString(),
         };
 
         const { data: newUser, error: insertError } = await supabase
           .from('users')
-          .insert(insertData)
-          .select()
-          .single();
+          .insert(insertData);
 
         if (insertError) {
           // If insert fails with Clerk ID, try without specifying ID (let DB generate UUID)
           delete insertData.id;
           const { data: retryUser, error: retryError } = await supabase
             .from('users')
-            .insert(insertData)
-            .select()
-            .single();
+            .insert(insertData);
           
           if (retryError) {
             console.error('Error creating user:', retryError);
             throw retryError;
           }
           
-          user = retryUser;
+          user = insertData; // Use the data we tried to insert
         } else {
-          user = newUser;
+          user = insertData; // Successfully inserted
         }
       } else {
         // User exists, update
@@ -101,21 +100,18 @@ export class ClerkSupabaseAuth {
             email: userData.email,
             username: userData.username,
             display_name: userData.display_name,
-            first_name: userData.first_name,
-            last_name: userData.last_name,
             avatar_url: userData.avatar_url,
             last_seen: userData.last_seen,
             updated_at: userData.updated_at,
           })
-          .eq('clerk_user_id', clerkUser.id)
-          .select()
-          .single();
+          .eq('id', clerkUser.id);
 
         if (updateError) {
           console.error('Error updating user:', updateError);
           // Use existing user data if update fails
         } else {
-          user = updatedUser;
+          // Update succeeded, merge the updated data with existing user
+          user = { ...user, ...userData };
         }
       }
 
@@ -132,6 +128,8 @@ export class ClerkSupabaseAuth {
       };
     } catch (error) {
       console.error('Error syncing user with database:', error);
+      // Don't throw the error, just log it and return fallback data
+      // This allows the app to continue functioning even if sync fails
       
       // Return basic user data as fallback
       return {

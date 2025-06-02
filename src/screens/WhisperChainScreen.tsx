@@ -205,6 +205,11 @@ export default function WhisperChainScreen({ navigation, route }: Props) {
         setWhisper({ ...whisper, chainCount: whisper.chainCount + 1 });
       }
       
+      // Trigger refresh on parent screens
+      if (route.params?.onRefresh) {
+        route.params.onRefresh();
+      }
+      
       console.log('Successfully added chain response');
     } catch (error: any) {
       console.error('Error creating chain response:', error);

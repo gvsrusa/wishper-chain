@@ -78,6 +78,8 @@ class RestOnlyQueryBuilder {
   private isSingle: boolean = false;
   private isMaybeSingle: boolean = false;
   private _method: string = 'GET';
+  private _insertValues: any = null;
+  private _updateValues: any = null;
 
   constructor(baseUrl: string, headers: Record<string, string>, table: string) {
     this.baseUrl = baseUrl;
@@ -199,9 +201,15 @@ class RestOnlyQueryBuilder {
   }
 
   async execute(): Promise<{ data: any; error: any }> {
-    // Handle DELETE method
+    // Handle different methods
     if (this._method === 'DELETE') {
       return this.executeDelete();
+    }
+    if (this._method === 'INSERT') {
+      return this.executeInsert();
+    }
+    if (this._method === 'UPDATE') {
+      return this.executeUpdate();
     }
     
     const url = this.buildUrl();
@@ -270,14 +278,28 @@ class RestOnlyQueryBuilder {
     return this.execute().then(resolve, reject);
   }
 
-  async insert(values: any | any[]) {
+  insert(values: any | any[]) {
+    // Store the values for later execution
+    this._insertValues = values;
+    this._method = 'INSERT';
+    // Return this to allow chaining
+    return this;
+  }
+
+  private async executeInsert() {
     const url = `${this.baseUrl}/${this.table}`;
     
     try {
+      // If select() was called after insert(), add Prefer header
+      const headers = { ...this.headers };
+      if (this.selectQuery) {
+        headers['Prefer'] = 'return=representation';
+      }
+
       const response = await fetch(url, {
         method: 'POST',
-        headers: this.headers,
-        body: JSON.stringify(values),
+        headers,
+        body: JSON.stringify(this._insertValues),
       });
 
       if (!response.ok) {
@@ -301,7 +323,7 @@ class RestOnlyQueryBuilder {
       const data = await response.json();
       
       // If single value was inserted, return single object
-      if (!Array.isArray(values) && Array.isArray(data) && data.length === 1) {
+      if (!Array.isArray(this._insertValues) && Array.isArray(data) && data.length === 1) {
         return { data: data[0], error: null };
       }
       
@@ -317,14 +339,22 @@ class RestOnlyQueryBuilder {
     }
   }
 
-  async update(values: any) {
+  update(values: any) {
+    // Store the values for later execution
+    this._updateValues = values;
+    this._method = 'UPDATE';
+    // Return this to allow chaining
+    return this;
+  }
+
+  private async executeUpdate() {
     const url = this.buildUrl();
     
     try {
       const response = await fetch(url, {
         method: 'PATCH',
         headers: this.headers,
-        body: JSON.stringify(values),
+        body: JSON.stringify(this._updateValues),
       });
 
       if (!response.ok) {

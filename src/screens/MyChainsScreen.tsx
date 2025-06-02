@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Colors, Typography } from '../constants';
 import { api } from '../services/api';
@@ -15,9 +15,12 @@ export default function MyChainsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [groupedChains, setGroupedChains] = useState<{ [whisperId: string]: ChainResponse[] }>({});
 
-  useEffect(() => {
-    fetchUserChains();
-  }, []);
+  // Refresh chains whenever screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      fetchUserChains();
+    }, [])
+  );
 
   const fetchUserChains = async () => {
     try {
@@ -43,7 +46,13 @@ export default function MyChainsScreen() {
   };
 
   const handleChainPress = (whisperId: string) => {
-    navigation.navigate('WhisperChain', { whisperId });
+    navigation.navigate('WhisperChain', { 
+      whisperId,
+      onRefresh: () => {
+        // Refresh chains when coming back
+        fetchUserChains();
+      }
+    });
   };
 
   const formatDate = (date: Date) => {

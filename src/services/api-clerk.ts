@@ -126,14 +126,17 @@ export const api = {
 
   // Whispers
   getWhispers: async (sortBy: string = 'trending'): Promise<Whisper[]> => {
-    // Don't wait for auth - whispers are publicly viewable
-    const currentUserId = getCurrentUserId();
-    console.log('getWhispers - currentUserId:', currentUserId);
-    
-    let query = supabase
-      .from('whispers')
-      .select('*')
-      .eq('is_published', true);
+    try {
+      // Don't wait for auth - whispers are publicly viewable
+      const currentUserId = getCurrentUserId();
+      console.log('getWhispers - currentUserId:', currentUserId);
+      console.log('getWhispers - sortBy:', sortBy);
+      console.log('getWhispers - supabase client exists:', !!supabase);
+      
+      let query = supabase
+        .from('whispers')
+        .select('*')
+        .eq('is_published', true);
 
     // Apply sorting
     switch (sortBy.toLowerCase()) {
@@ -154,6 +157,8 @@ export const api = {
 
     if (error) {
       console.error('Error fetching whispers:', error);
+      console.error('Supabase error details:', error);
+      // Don't throw, return empty array to allow app to continue
       return [];
     }
 
@@ -192,6 +197,15 @@ export const api = {
     }
 
     return [];
+    } catch (error) {
+      console.error('Error in getWhispers:', error);
+      console.error('Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      // Return empty array instead of throwing to prevent app crash
+      return [];
+    }
   },
 
   getWhisperById: async (id: string): Promise<Whisper | null> => {
@@ -376,9 +390,9 @@ export const api = {
       console.log('Attempting to unlike...');
       const { error } = await supabase
         .from('likes')
+        .delete()
         .eq('whisper_id', whisperId)
-        .eq('user_id', userId)
-        .delete();
+        .eq('user_id', userId);
 
       if (error) {
         console.error('Error unliking:', error);
@@ -389,14 +403,12 @@ export const api = {
     } else {
       // Like
       console.log('Attempting to like...');
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('likes')
         .insert({
           whisper_id: whisperId,
           user_id: userId,
         });
-
-      console.log('Like insert result:', data, 'Error:', error);
 
       if (error) {
         console.error('Error liking:', error);
