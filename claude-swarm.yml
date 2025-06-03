@@ -1,0 +1,93 @@
+version: 1
+swarm:
+  name: "Multi-Service Development Team"
+  main: architect
+  instances:
+    architect:
+      description: "System architect coordinating between service teams"
+      directory: .
+      model: opus
+      connections: [lead_developer, backend_lead, api_dev, database_expert, mobile_lead]
+      prompt: "You are the system architect coordinating between different service teams"
+      allowed_tools: [Read, Edit, WebSearch]
+    lead_developer:
+      description: "Lead developer who coordinates the team and makes architectural decisions"
+      directory: .
+      model: opus
+      prompt: "You are the lead developer coordinating the team"
+      allowed_tools: [Read, Edit, Bash, Write]
+      connections: [backend_lead, api_dev, database_expert, mobile_lead]
+    
+    backend_lead:
+      description: "Backend team lead managing API development"
+      directory: ./api-server
+      model: opus
+      connections: [api_dev, database_expert]
+      prompt: "You lead the API backend team"
+      allowed_tools: [Read, Edit, Bash]
+    
+    api_dev:
+      description: "API developer building REST endpoints"
+      directory: ./api-server/src
+      model: opus
+      prompt: "You develop REST API endpoints"
+      allowed_tools: [Edit, Write, Bash]
+    
+    database_expert:
+      description: "Database specialist managing schemas and migrations"
+      directory: ./api-server/db
+      model: opus
+      prompt: "You handle database schema and migrations"
+      allowed_tools: [Edit, Write, "Bash(psql:*, migrate:*)"]
+    
+    mobile_lead:
+      description: "Mobile team lead coordinating cross-platform development"
+      directory: ./mobile-app
+      model: opus
+      connections: [ios_dev, android_dev]
+      prompt: "You coordinate mobile development across platforms"
+      allowed_tools: [Read, Edit]
+    
+    ios_dev:
+      description: "iOS developer building native Apple applications"
+      directory: ./mobile-app/ios
+      model: opus
+      prompt: "You develop the iOS application"
+      allowed_tools: [Edit, Write, "Bash(xcodebuild:*, pod:*)"]
+    
+    android_dev:
+      description: "Android developer creating native Android apps"
+      directory: ./mobile-app/android
+      model: opus
+      prompt: "You develop the Android application"
+      allowed_tools: [Edit, Write, "Bash(gradle:*, adb:*)"]
+
+    # Example instances (uncomment and modify as needed):
+
+    # frontend_dev:
+    #   description: "Frontend developer specializing in React and modern web technologies"
+    #   directory: ./frontend
+    #   model: sonnet
+    #   prompt: "You specialize in frontend development with React, TypeScript, and modern web technologies"
+    #   allowed_tools: [Read, Edit, Write, "Bash(npm:*)", "Bash(yarn:*)", "Bash(pnpm:*)"]
+
+    # backend_dev:
+    #   description: "Backend developer focusing on APIs, databases, and server architecture"
+    #   directory: ../other-app/backend
+    #   model: sonnet
+    #   prompt: "You specialize in backend development, APIs, databases, and server architecture"
+    #   allowed_tools: [Read, Edit, Write, Bash]
+
+    # devops_engineer:
+    #   description: "DevOps engineer managing infrastructure, CI/CD, and deployments"
+    #   directory: .
+    #   model: sonnet
+    #   prompt: "You specialize in infrastructure, CI/CD, containerization, and deployment"
+    #   allowed_tools: [Read, Edit, Write, "Bash(docker:*)", "Bash(kubectl:*)", "Bash(terraform:*)"]
+
+    # qa_engineer:
+    #   description: "QA engineer ensuring quality through comprehensive testing"
+    #   directory: ./tests
+    #   model: sonnet
+    #   prompt: "You specialize in testing, quality assurance, and test automation"
+    #   allowed_tools: [Read, Edit, Write, Bash]
