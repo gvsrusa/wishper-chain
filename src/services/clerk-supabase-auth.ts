@@ -39,10 +39,19 @@ export class ClerkSupabaseAuth {
       console.log('Using fallback sync method');
       
       // Prepare user data
+      // Generate a unique username if not provided by Clerk
+      let suggestedUsername = clerkUser.username;
+      if (!suggestedUsername && clerkUser.primaryEmailAddress?.emailAddress) {
+        suggestedUsername = clerkUser.primaryEmailAddress.emailAddress.split('@')[0];
+      }
+      if (!suggestedUsername) {
+        suggestedUsername = `user_${clerkUser.id.slice(-6)}`;
+      }
+      
       const userData = {
         clerk_user_id: clerkUser.id,
         email: clerkUser.primaryEmailAddress?.emailAddress || null,
-        username: clerkUser.username || clerkUser.primaryEmailAddress?.emailAddress?.split('@')[0] || `user_${clerkUser.id.slice(-6)}`,
+        username: suggestedUsername,
         display_name: clerkUser.fullName || clerkUser.firstName || clerkUser.username || 'Anonymous',
         first_name: clerkUser.firstName || null,
         last_name: clerkUser.lastName || null,
@@ -53,69 +62,120 @@ export class ClerkSupabaseAuth {
       };
 
       // Check if user exists by clerk_user_id
-      const { data: existingUsers, error: fetchError } = await supabase
+      const { data: userByClerkId } = await supabase
         .from('users')
         .select('*')
-        .eq('clerk_user_id', clerkUser.id);
+        .eq('clerk_user_id', clerkUser.id)
+        .maybeSingle();
+      
+      // If email is provided, also check by email
+      let userByEmail = null;
+      if (userData.email) {
+        const { data } = await supabase
+          .from('users')
+          .select('*')
+          .eq('email', userData.email)
+          .maybeSingle();
+        userByEmail = data;
+      }
 
       let user;
       
-      if (!existingUsers || existingUsers.length === 0) {
+      // Scenario 1: No existing user found
+      if (!userByClerkId && !userByEmail) {
         // User doesn't exist, create new
-        // For new users, we need to handle the id field based on the schema
+        // For new users, let database generate UUID
         const insertData: any = {
           ...userData,
-          id: clerkUser.id, // Try using Clerk ID as primary key
         };
 
-        const { data: newUser, error: insertError } = await supabase
+        const { data: insertResult, error: insertError } = await supabase
           .from('users')
-          .insert(insertData)
-          .select()
-          .single();
+          .insert(insertData);
+        
+        let newUser = null;
+        if (!insertError && insertResult) {
+          // After insert, fetch the created user
+          const { data: fetchedUser } = await supabase
+            .from('users')
+            .select('*')
+            .eq('clerk_user_id', clerkUser.id)
+            .single();
+          newUser = fetchedUser;
+        }
 
         if (insertError) {
-          // If insert fails with Clerk ID, try without specifying ID (let DB generate UUID)
-          delete insertData.id;
-          const { data: retryUser, error: retryError } = await supabase
-            .from('users')
-            .insert(insertData)
-            .select()
-            .single();
-          
-          if (retryError) {
-            console.error('Error creating user:', retryError);
-            throw retryError;
+          // If insert fails due to username conflict, try with a modified username
+          if (insertError.message?.includes('username')) {
+            console.log('Username conflict, generating unique username');
+            insertData.username = `${userData.username}_${Date.now().toString(36).slice(-4)}`;
+            const { data: retryResult, error: retryError } = await supabase
+              .from('users')
+              .insert(insertData);
+            
+            let retryUser = null;
+            if (!retryError && retryResult) {
+              // After insert, fetch the created user
+              const { data: fetchedUser } = await supabase
+                .from('users')
+                .select('*')
+                .eq('clerk_user_id', clerkUser.id)
+                .single();
+              retryUser = fetchedUser;
+            }
+            
+            if (retryError) {
+              console.error('Error creating user:', retryError);
+              throw retryError;
+            }
+            
+            user = retryUser;
+          } else {
+            // Other insert error - throw it
+            console.error('Error creating user:', insertError);
+            throw insertError;
           }
-          
-          user = retryUser;
         } else {
           user = newUser;
         }
-      } else {
-        // User exists, update
-        user = existingUsers[0];
-        const { data: updatedUser, error: updateError } = await supabase
+      }
+      // Scenario 2: User exists with same clerk_user_id
+      else if (userByClerkId) {
+        user = userByClerkId;
+        console.log('Found existing user by clerk_user_id:', user.id);
+        
+        // Only update last_seen timestamp
+        const { error: updateError } = await supabase
           .from('users')
-          .update({
-            email: userData.email,
-            username: userData.username,
-            display_name: userData.display_name,
-            first_name: userData.first_name,
-            last_name: userData.last_name,
-            avatar_url: userData.avatar_url,
+          .update({ 
             last_seen: userData.last_seen,
-            updated_at: userData.updated_at,
+            updated_at: userData.updated_at
           })
-          .eq('clerk_user_id', clerkUser.id)
-          .select()
-          .single();
-
+          .eq('id', user.id);
+          
         if (updateError) {
-          console.error('Error updating user:', updateError);
-          // Use existing user data if update fails
-        } else {
-          user = updatedUser;
+          console.error('Error updating last_seen:', updateError);
+        }
+      }
+      // Scenario 3: User exists with same email but different clerk_user_id
+      else if (userByEmail && !userByClerkId) {
+        // This happens when switching auth providers (e.g., email to Google)
+        console.log('Found user by email, updating clerk_user_id');
+        user = userByEmail;
+        
+        // Update the clerk_user_id to link this Clerk account
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({ 
+            clerk_user_id: clerkUser.id,
+            last_seen: userData.last_seen,
+            updated_at: userData.updated_at
+          })
+          .eq('id', userByEmail.id);
+          
+        if (updateError) {
+          console.error('Error updating clerk_user_id:', updateError);
+          throw updateError;
         }
       }
 
@@ -161,7 +221,6 @@ export class ClerkSupabaseAuth {
    */
   static async createAnonymousUser(tempId: string): Promise<User> {
     const anonymousData = {
-      id: tempId,
       clerk_user_id: tempId,
       username: `anon_${tempId.slice(-8)}`,
       display_name: 'Anonymous',
@@ -170,10 +229,20 @@ export class ClerkSupabaseAuth {
       updated_at: new Date().toISOString(),
     };
 
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('users')
-      .insert(anonymousData)
-      .select()
+      .insert(anonymousData);
+    
+    if (error) {
+      console.error('Error creating anonymous user:', error);
+      throw error;
+    }
+    
+    // After insert, fetch the created user
+    const { data } = await supabase
+      .from('users')
+      .select('*')
+      .eq('clerk_user_id', tempId)
       .single();
 
     if (error) {

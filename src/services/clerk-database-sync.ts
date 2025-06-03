@@ -19,6 +19,7 @@ export class ClerkDatabaseSync {
    */
   static async getUser(clerkUserId: string): Promise<User | null> {
     try {
+      // Find user by clerk_user_id
       const { data, error } = await supabase
         .from('users')
         .select('*')

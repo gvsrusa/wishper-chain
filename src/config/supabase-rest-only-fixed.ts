@@ -78,6 +78,7 @@ class RestOnlyQueryBuilder {
   private isSingle: boolean = false;
   private isMaybeSingle: boolean = false;
   private _method: string = 'GET';
+  private _updateData: any = null;
 
   constructor(baseUrl: string, headers: Record<string, string>, table: string) {
     this.baseUrl = baseUrl;
@@ -204,6 +205,11 @@ class RestOnlyQueryBuilder {
       return this.executeDelete();
     }
     
+    // Handle PATCH method (update)
+    if (this._method === 'PATCH') {
+      return this.executeUpdate();
+    }
+    
     const url = this.buildUrl();
     
     console.log('Fetching from URL:', url);
@@ -317,14 +323,20 @@ class RestOnlyQueryBuilder {
     }
   }
 
-  async update(values: any) {
+  update(values: any) {
+    this._updateData = values;
+    this._method = 'PATCH';
+    return this;
+  }
+
+  private async executeUpdate() {
     const url = this.buildUrl();
     
     try {
       const response = await fetch(url, {
         method: 'PATCH',
         headers: this.headers,
-        body: JSON.stringify(values),
+        body: JSON.stringify(this._updateData),
       });
 
       if (!response.ok) {

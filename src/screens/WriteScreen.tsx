@@ -26,8 +26,6 @@ export default function WriteScreen() {
   const { user } = useAuth();
   const [whisperText, setWhisperText] = useState('');
   const [selectedTheme, setSelectedTheme] = useState<string | null>(null);
-  const [customTheme, setCustomTheme] = useState('');
-  const [showCustomTheme, setShowCustomTheme] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async () => {
@@ -47,11 +45,9 @@ export default function WriteScreen() {
     setIsSubmitting(true);
     
     try {
-      const themeToUse = showCustomTheme ? customTheme.trim() : selectedTheme;
-      
       await api.createWhisper(
         whisperText.trim(),
-        themeToUse || 'Abstract'
+        selectedTheme || 'Abstract'
       );
       
       Alert.alert(
@@ -77,13 +73,6 @@ export default function WriteScreen() {
 
   const selectTheme = (themeName: string) => {
     setSelectedTheme(selectedTheme === themeName ? null : themeName);
-    setShowCustomTheme(false);
-    setCustomTheme('');
-  };
-
-  const handleCustomTheme = () => {
-    setShowCustomTheme(true);
-    setSelectedTheme(null);
   };
 
   return (
@@ -124,29 +113,7 @@ export default function WriteScreen() {
               <Text style={styles.themeChipText}>{theme.name}</Text>
             </TouchableOpacity>
           ))}
-          
-          <TouchableOpacity
-            style={[
-              styles.themeChip,
-              styles.customChip,
-              showCustomTheme && styles.selectedChip
-            ]}
-            onPress={handleCustomTheme}
-          >
-            <Text style={styles.customChipText}>+ Custom</Text>
-          </TouchableOpacity>
         </View>
-        
-        {showCustomTheme && (
-          <TextInput
-            style={styles.customThemeInput}
-            placeholder="Enter custom theme (max 3 words)"
-            placeholderTextColor={Colors.textSecondary}
-            value={customTheme}
-            onChangeText={setCustomTheme}
-            maxLength={30}
-          />
-        )}
       </View>
       
       <TouchableOpacity
@@ -229,24 +196,6 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     fontSize: Typography.fontSize.sm,
     fontWeight: Typography.fontWeight.medium,
-  },
-  customChip: {
-    backgroundColor: Colors.cardBackground,
-    borderWidth: 1,
-    borderColor: Colors.primaryAccent,
-  },
-  customChipText: {
-    color: Colors.primaryAccent,
-    fontSize: Typography.fontSize.sm,
-    fontWeight: Typography.fontWeight.medium,
-  },
-  customThemeInput: {
-    backgroundColor: Colors.cardBackground,
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 12,
-    color: Colors.textPrimary,
-    fontSize: Typography.fontSize.sm,
   },
   submitButton: {
     backgroundColor: Colors.primaryAccent,
